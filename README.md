@@ -13,7 +13,9 @@ Memora is the next name for SmartMem, a local-first file intelligence prototype.
 - View storage, file categories, large files, and duplicate groups.
 - Run AI-assisted categorization in dry-run mode by default; live moves have an undo log.
 - Extract text from several common document, spreadsheet, presentation, text, and code formats.
-- Build a FAISS index and combine dense similarity with a keyword overlap score.
+- Index overlapping text passages in FAISS, combine dense retrieval with lexical search, and return source excerpts with match explanations.
+- Continue filename/content keyword search when Ollama is unavailable.
+- Open a selected result or its containing folder through an explicit user action.
 - Track background task status and move requested deletions to a recycle directory.
 
 These capabilities have not all received automated verification. OCR, audio transcription, chunked retrieval, cross-document answers with citations, smart collections, settings UI, and Tauri packaging are not currently implemented.
@@ -76,6 +78,9 @@ Ollama defaults to `http://127.0.0.1:11434`. Basic metadata scanning, hashes, an
 | `SMARTMEM_RECYCLE_BIN` | `~/.smartmem_recycle` | Destination for requested deletions |
 | `OLLAMA_BASE` | `http://127.0.0.1:11434` | Local Ollama endpoint |
 | `OLLAMA_TIMEOUT` | `60` | Model request timeout in seconds |
+| `MEMORA_DOCUMENT_MAX_CHARS` | `100000` | Maximum extracted characters cached per file (bounded to 2,000,000) |
+| `MEMORA_CHUNK_SIZE` | `1200` | Passage size in characters (bounded to 8,000) |
+| `MEMORA_CHUNK_OVERLAP` | `160` | Overlap between passages |
 | `ALLOW_ALL_ORIGINS` | `false` | Enable wildcard CORS (avoid for local deployment) |
 | `ALLOWED_ORIGINS` | localhost list | CORS origin allowlist |
 | `LOG_LEVEL` | `INFO` | Python logging level |

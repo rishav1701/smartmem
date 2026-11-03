@@ -52,26 +52,25 @@ async def get_duplicates(min_size: int = 1) -> list[dict]:
 
 
 async def get_duplicate_summary() -> dict:
-    """High-level stats about duplicates."""
+    """Summarize active duplicate groups from file rows, not stale hash counters."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            """SELECT COUNT(*) as dup_groups,
-                      SUM(file_count - 1) as extra_files
-               FROM hash_index WHERE file_count > 1"""
+            """SELECT COUNT(*) AS duplicate_groups,
+                      COALESCE(SUM(file_count - 1), 0) AS extra_files,
+                      COALESCE(SUM(file_size * (file_count - 1)), 0) AS wasted_bytes
+               FROM (
+                   SELECT sha256, COUNT(*) AS file_count, MAX(size_bytes) AS file_size
+                   FROM files_metadata
+                   WHERE sha256 IS NOT NULL AND is_deleted=0
+                   GROUP BY sha256
+                   HAVING COUNT(*) > 1
+               )"""
         ) as cur:
-            row = await cur.fetchone()
-
-        async with db.execute(
-            """SELECT SUM(size_bytes) as wasted
-               FROM files_metadata f
-               JOIN hash_index h ON f.sha256 = h.sha256
-               WHERE h.file_count > 1 AND f.is_deleted = 0"""
-        ) as cur:
-            wasted = await cur.fetchone()
+            row = dict(await cur.fetchone())
 
     return {
-        "duplicate_groups": row["dup_groups"] or 0,
-        "extra_files":      row["extra_files"] or 0,
-        "wasted_bytes":     wasted["wasted"] or 0,
+        "duplicate_groups": row["duplicate_groups"],
+        "extra_files": row["extra_files"],
+        "wasted_bytes": row["wasted_bytes"],
     }

@@ -1,5 +1,5 @@
 """routers/storage.py"""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 import aiosqlite
 from database.db import get_db
 from services.analytics.storage_analyzer import (
@@ -42,7 +42,7 @@ async def category_counts(db: aiosqlite.Connection = Depends(get_db)):
 async def categorised_files(
     category: str = None,
     parent: str = None,   # top-level filter e.g. "Academics" matches all Academics/*
-    limit: int = 200,
+    limit: int = Query(default=200, ge=1, le=1000),
     db: aiosqlite.Connection = Depends(get_db)
 ):
     """

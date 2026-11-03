@@ -1,5 +1,5 @@
 """routers/large_files.py"""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 import aiosqlite
 from database.db import get_db
 from datetime import datetime, timedelta
@@ -9,9 +9,9 @@ router = APIRouter()
 
 @router.get("/large-files")
 async def large_files(
-    min_mb: float = 100,
-    unused_days: int = 90,
-    limit: int = 50,
+    min_mb: float = Query(default=100, ge=0, le=10_000_000),
+    unused_days: int = Query(default=90, ge=0, le=365_000),
+    limit: int = Query(default=50, ge=1, le=500),
     db: aiosqlite.Connection = Depends(get_db),
 ):
     min_bytes = int(min_mb * 1024 * 1024)

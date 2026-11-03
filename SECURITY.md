@@ -2,13 +2,13 @@
 
 ## Data flow
 
-The backend scans only directories explicitly added by the user. Metadata and extracted text are stored in the configured SQLite database; vector data and mapping files are stored under the backend data directory. Local AI requests go to the configured Ollama endpoint. The repository does not include a cloud AI client. The app has no account or authentication layer and should be bound to loopback, not exposed to an untrusted network.
+The backend scans only directories explicitly added by the user. Metadata and extracted text are stored in the configured SQLite database; vector data and mapping files are stored under the backend data directory. Local AI requests go to the configured Ollama endpoint. The repository does not include a cloud AI client. Search paths and snippets render escaped text in the UI. The app has no account or authentication layer and should be bound to loopback, not exposed to an untrusted network.
 
 ## File operations
 
 File movement and deletion can affect user data. The organizer defaults to dry-run, and delete requests are intended to move files into a recycle directory. Review proposed moves and duplicate groups before executing them. Keep backups of important files. Never expose the API to an untrusted network.
 
-Path checks reject traversal and linked path components before resolving. This is defense in depth, not a substitute for OS permissions; junction and race behavior must be tested on each supported platform. Do not treat extracted document content as trusted instructions.
+Path checks reject traversal and linked path components before resolving. Scanning and organizer operations re-check selected-root scope; scanner and hasher skip symlinks and junctions. Open actions use argument-array desktop launchers without a command shell and require an explicit click. This is defense in depth, not a substitute for OS permissions; junction and race behavior must be tested on each supported platform. Do not treat extracted document content as trusted instructions.
 
 ## Local data inventory
 

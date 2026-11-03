@@ -1,6 +1,6 @@
 """routers/duplicates.py"""
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 import aiosqlite
 from database.db import get_db
 from security.guard import safe_delete, assert_under_allowed, resolve_safe
@@ -10,14 +10,14 @@ router = APIRouter()
 
 
 @router.get("/duplicates")
-async def list_duplicates(min_size: int = 1024):
+async def list_duplicates(min_size: int = Query(default=1024, ge=0, le=10**15)):
     summary = await get_duplicate_summary()
     groups  = await get_duplicates(min_size)
     return {"summary": summary, "groups": groups}
 
 
 class DeleteIn(BaseModel):
-    path: str
+    path: str = Field(min_length=1, max_length=4096)
 
 
 @router.delete("/delete-file")

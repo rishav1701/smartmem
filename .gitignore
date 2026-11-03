@@ -2,6 +2,11 @@ backend/data/smartmem.db
 backend/data/smartmem.db-shm
 backend/data/smartmem.db-wal
 backend/.venv/
+backend/data/faiss_docs_manifest.json
+backend/data/faiss_docs_*.index
+backend/data/faiss_docs_*.json
+backend/data/.faiss_docs_manifest.tmp
+backend/data/.*.tmp
 **/__pycache__/
 *.py[cod]
 .pytest_cache/

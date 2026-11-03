@@ -1,22 +1,25 @@
 """routers/scan.py"""
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import aiosqlite
 from database.db import get_db
 from workers.task_queue import create_task, get_task, enqueue, get_all_tasks
 from services.scanner.file_scanner import scan_directory, hash_all_files
+from security.guard import validate_directory, assert_under_allowed
 
 router = APIRouter()
 
 
 class ScanIn(BaseModel):
-    path: str | None = None   # scan a specific path; if None, scan all saved dirs
+    path: str | None = Field(default=None, max_length=4096)
 
 
 @router.post("/scan")
 async def start_scan(body: ScanIn, db: aiosqlite.Connection = Depends(get_db)):
     if body.path:
-        paths = [body.path]
+        path = validate_directory(body.path)
+        await assert_under_allowed(path, db)
+        paths = [str(path)]
     else:
         async with db.execute("SELECT path FROM directories") as cur:
             rows = await cur.fetchall()

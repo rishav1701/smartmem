@@ -1,5 +1,5 @@
 """routers/tasks.py"""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 import json
 
 from workers.task_queue import create_task, enqueue, get_task, get_all_tasks, cancel_task
@@ -8,7 +8,7 @@ router = APIRouter()
 
 
 @router.get("/tasks")
-async def list_tasks(limit: int = 10):   # default 10 as requested
+async def list_tasks(limit: int = Query(default=10, ge=1, le=200)):
     return await get_all_tasks(limit)
 
 

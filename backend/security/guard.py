@@ -15,11 +15,11 @@ from datetime import datetime
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
+_FILE_ATTRIBUTE_REPARSE_POINT = 0x0400
 
 # Import from dedicated config
 from config import RECYCLE_BIN
 
-RECYCLE_BIN.mkdir(parents=True, exist_ok=True)
 
 
 # ── Path helpers ──────────────────────────────────────────────────────────────
@@ -59,8 +59,13 @@ def _reject_linked_components(path: pathlib.Path) -> None:
     for part in path.parts[1:]:
         current = current / part
         try:
-            if current.is_symlink() or (hasattr(current, "is_junction") and current.is_junction()):
+            st = current.lstat()
+            attrs = getattr(st, "st_file_attributes", 0)
+            is_junction = hasattr(current, "is_junction") and current.is_junction()
+            if current.is_symlink() or is_junction or attrs & _FILE_ATTRIBUTE_REPARSE_POINT:
                 raise HTTPException(400, "Symlinks and junctions are not allowed")
+        except FileNotFoundError:
+            continue
         except OSError as exc:
             raise HTTPException(400, "Cannot safely inspect path") from exc
 
@@ -77,7 +82,7 @@ async def assert_under_allowed(
     async with db.execute("SELECT path FROM directories") as cur:
         rows = await cur.fetchall()
 
-    allowed = [pathlib.Path(r["path"]).resolve() for r in rows]
+    allowed = [pathlib.Path(r[0]).resolve() for r in rows]
     
     # FIX: Use is_relative_to() for safer path containment check
     # This properly handles edge cases like /allowed_evil under /allowed
@@ -113,6 +118,8 @@ def safe_delete(file_path: pathlib.Path) -> pathlib.Path:
         raise HTTPException(400, "Cannot delete symlinks")
 
     file_path = pathlib.Path(resolve_safe(str(file_path)))
+    if not file_path.is_file():
+        raise HTTPException(400, "Only regular files can be moved to the recycle bin")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     dest = RECYCLE_BIN / f"{timestamp}__{file_path.name}"
     suffix = 1
@@ -120,6 +127,7 @@ def safe_delete(file_path: pathlib.Path) -> pathlib.Path:
         dest = RECYCLE_BIN / f"{timestamp}_{suffix}__{file_path.name}"
         suffix += 1
 
+    RECYCLE_BIN.mkdir(parents=True, exist_ok=True)
     shutil.move(str(file_path), str(dest))
     logger.info("🗑  Moved %s → %s", file_path, dest)
     return dest

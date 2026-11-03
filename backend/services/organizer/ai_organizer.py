@@ -16,6 +16,7 @@ import aiosqlite, httpx
 from database.db import DB_PATH
 from config import OLLAMA_BASE, OLLAMA_TIMEOUT
 from workers.task_queue import update_task, is_cancelled
+from security.guard import validate_directory, resolve_safe, assert_under_allowed
 
 logger = logging.getLogger(__name__)
 _detected_model: str | None = None
@@ -386,11 +387,13 @@ async def categorize_files(task_id: str, dry_run: bool = True,
         if not base_dir.strip():
             await update_task(task_id, "failed", 0, "base_dir required for live mode")
             return
-        dest_root = pathlib.Path(base_dir.strip())
         try:
-            dest_root.mkdir(parents=True, exist_ok=True)
+            dest_root = validate_directory(base_dir.strip())
+            async with aiosqlite.connect(str(DB_PATH)) as db:
+                await assert_under_allowed(dest_root, db)
+            base_dir = str(dest_root)
         except Exception as exc:
-            await update_task(task_id, "failed", 0, f"Cannot create base_dir: {exc}")
+            await update_task(task_id, "failed", 0, f"Invalid organization destination: {exc}")
             return
 
     query = ("SELECT id, path, filename FROM files_metadata WHERE is_deleted=0"
@@ -418,9 +421,16 @@ async def categorize_files(task_id: str, dry_run: bool = True,
         nonlocal done_count
         if is_cancelled(task_id):
             return
-        if not pathlib.Path(row["path"]).exists():
+        try:
+            source_path = resolve_safe(row["path"])
+            async with aiosqlite.connect(str(DB_PATH)) as scope_db:
+                await assert_under_allowed(source_path, scope_db)
+        except Exception as exc:
+            logger.warning("Skipping out-of-scope organizer source: %s", exc)
             return
-        snippet  = await asyncio.to_thread(_read_snippet, row["path"])
+        if not source_path.is_file():
+            return
+        snippet  = await asyncio.to_thread(_read_snippet, str(source_path))
         async with _SEM:
             category = await _ask_ollama(row["filename"], snippet)
         async with aiosqlite.connect(str(DB_PATH)) as db:
@@ -428,7 +438,7 @@ async def categorize_files(task_id: str, dry_run: bool = True,
                              (category, row["id"]))
             await db.commit()
         if not dry_run and base_dir:
-            await _move_file_async(row["path"], category, base_dir.strip())
+            await _move_file_async(str(source_path), category, base_dir.strip())
         done_count += 1
         if done_count % BATCH == 0 or done_count == total:
             await update_task(task_id, "running", done_count / total,
@@ -454,15 +464,33 @@ async def _move_file_async(src: str, category: str, base_dir: str):
     Move file to categorized destination.
     FIX: Make file move and DB update atomic to prevent inconsistency.
     """
-    src_path = pathlib.Path(src)
-    if not src_path.exists():
+    if category not in CATEGORIES:
+        logger.warning("Refusing unknown organizer category")
+        return False
+    try:
+        src_path = resolve_safe(src)
+        dest_root = validate_directory(base_dir)
+        async with aiosqlite.connect(str(DB_PATH)) as db:
+            await assert_under_allowed(src_path, db)
+            await assert_under_allowed(dest_root, db)
+    except Exception as exc:
+        logger.warning("Refusing out-of-scope organizer move: %s", exc)
+        return False
+    if not src_path.is_file():
         logger.warning("Source file does not exist: %s", src)
         return
     
     # category may have subdirs e.g. "Academics/Lectures"
-    dest_dir = pathlib.Path(base_dir)
+    dest_dir = dest_root
     for part in category.split("/"):
         dest_dir = dest_dir / part
+    try:
+        dest_dir = resolve_safe(str(dest_dir))
+        async with aiosqlite.connect(str(DB_PATH)) as db:
+            await assert_under_allowed(dest_dir, db)
+    except Exception as exc:
+        logger.warning("Refusing unsafe organizer category destination: %s", exc)
+        return False
     
     try:
         dest_dir.mkdir(parents=True, exist_ok=True)
@@ -540,12 +568,21 @@ async def undo_last_moves(count: int = 10) -> list[dict]:
     results = []
     for m in moves:
         try:
-            pathlib.Path(m["original_path"]).parent.mkdir(parents=True, exist_ok=True)
-            await asyncio.to_thread(_do_move, m["new_path"], m["original_path"])
+            original = resolve_safe(m["original_path"])
+            moved = resolve_safe(m["new_path"])
+            async with aiosqlite.connect(str(DB_PATH)) as db:
+                await assert_under_allowed(original, db)
+                await assert_under_allowed(moved, db)
+            if original.exists():
+                results.append({"status": "error", "path": str(original),
+                                "error": "A file already exists at the original path"})
+                continue
+            original.parent.mkdir(parents=True, exist_ok=True)
+            await asyncio.to_thread(_do_move, str(moved), str(original))
             async with aiosqlite.connect(str(DB_PATH)) as db:
                 await db.execute("UPDATE organizer_log SET undone=1 WHERE id=?", (m["id"],))
                 await db.execute("UPDATE files_metadata SET path=? WHERE path=?",
-                                 (m["original_path"], m["new_path"]))
+                                 (str(original), str(moved)))
                 await db.commit()
             results.append({"status":"ok","restored":m["original_path"]})
         except Exception as exc:

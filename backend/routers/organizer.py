@@ -1,8 +1,8 @@
 """routers/organizer.py"""
 import pathlib
 import logging
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Depends, Query
+from pydantic import BaseModel, Field
 import aiosqlite
 from workers.task_queue import create_task, enqueue
 from services.organizer.ai_organizer import (
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class OrganizeIn(BaseModel):
     dry_run:  bool = True
-    base_dir: str  = ""
+    base_dir: str  = Field(default="", max_length=4096)
     force:    bool = False
 
 
@@ -59,7 +59,7 @@ async def organize(body: OrganizeIn, db: aiosqlite.Connection = Depends(get_db))
 
 
 @router.post("/organize/undo")
-async def undo_organize(count: int = 10):
+async def undo_organize(count: int = Query(default=10, ge=1, le=200)):
     results = await undo_last_moves(count)
     ok  = sum(1 for r in results if r["status"] == "ok")
     return {"restored": ok, "results": results}
@@ -71,7 +71,8 @@ async def model_status():
 
 
 @router.get("/organize/log")
-async def organizer_log(limit: int = 50, db: aiosqlite.Connection = Depends(get_db)):
+async def organizer_log(limit: int = Query(default=50, ge=1, le=500),
+                        db: aiosqlite.Connection = Depends(get_db)):
     async with db.execute(
         "SELECT * FROM organizer_log ORDER BY moved_at DESC LIMIT ?", (limit,)
     ) as cur:

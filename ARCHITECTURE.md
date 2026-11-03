@@ -19,12 +19,13 @@ flowchart LR
 - Routers validate transport inputs and call services.
 - Services own filesystem, retrieval, analytics, and model operations.
 - SQLite stores selected roots, file metadata, cached extracted text, task records, and organizer history.
-- FAISS stores dense vectors; the map links vector positions to file metadata IDs.
+- Completed scans track a scan generation and only mark unseen paths deleted if the whole walk/stat pass succeeds.
+- FAISS stores passage vectors. A generation manifest atomically selects immutable index/map files; JSON mappings link passages to file metadata IDs, source timestamps, and excerpts. Legacy index/pickle files remain readable for compatibility and are not overwritten.
 - Ollama is optional and local by default. File listing, scanning, hashing, and storage analysis do not inherently require it.
 
 ## Current design constraints
 
-The queue is process-local; the task table does not itself provide durable execution. Current semantic retrieval is one vector per file, and FAISS/map persistence is not transactional with SQLite. These constraints are recorded in [PROJECT_AUDIT.md](PROJECT_AUDIT.md).
+The queue is process-local; interrupted tasks become failed and can be retried, but execution is not automatically resumed. Passage vectors are generation-persisted, while SQLite metadata commit follows the index manifest; a crash can cause safe duplicate passages on retry. This is recoverable but not a cross-resource transaction.
 
 ## Target evolution
 

@@ -13,18 +13,17 @@ from fastapi.responses import FileResponse
 
 from database.db import init_db
 from workers.task_queue import start_worker, recover_interrupted_tasks
-from config import LOG_LEVEL, ALLOW_ALL_ORIGINS, ALLOWED_ORIGINS, DATA_DIR
+from config import LOG_LEVEL, ALLOW_ALL_ORIGINS, ALLOWED_ORIGINS, DATA_DIR, APP_VERSION
 from routers import (
     directories, scan, storage, duplicates,
-    large_files, organizer, search, tasks
+    large_files, organizer, search, tasks, file_actions, settings
 )
 
 logging.basicConfig(
     level=LOG_LEVEL,
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s"
 )
-logger = logging.getLogger("smartmem")
-APP_VERSION = "0.3.0"
+logger = logging.getLogger("memora")
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -60,9 +59,9 @@ cors_origins = ["*"] if ALLOW_ALL_ORIGINS else ALLOWED_ORIGINS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
 
 app.include_router(directories.router, prefix="/api", tags=["Directories"])
@@ -73,6 +72,8 @@ app.include_router(large_files.router, prefix="/api", tags=["Large Files"])
 app.include_router(organizer.router,   prefix="/api", tags=["Organizer"])
 app.include_router(search.router,      prefix="/api", tags=["Search"])
 app.include_router(tasks.router,       prefix="/api", tags=["Tasks"])
+app.include_router(file_actions.router, prefix="/api", tags=["Files"])
+app.include_router(settings.router, prefix="/api", tags=["Settings"])
 
 
 # ── System metrics endpoint (inspired by uploaded main.py / psutil pattern) ───

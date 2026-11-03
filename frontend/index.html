@@ -465,6 +465,10 @@ select.inp{cursor:pointer}
         Task Queue
         <span class="badge-count" id="nav-tasks-count">0</span>
       </div>
+      <div class="ni" data-page="settings" onclick="go(this)">
+        <svg width="13" height="13" fill="none" viewBox="0 0 14 14"><circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M7 1v2M7 11v2M1 7h2m8 0h2M2.76 2.76l1.42 1.42m5.64 5.64 1.42 1.42m0-8.48-1.42 1.42m-5.64 5.64-1.42 1.42" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Settings
+      </div>
     </div>
   </nav>
   <div class="sf">
@@ -807,15 +811,36 @@ select.inp{cursor:pointer}
     </div>
   </div>
 
+  <div class="page" id="page-settings">
+    <div class="card">
+      <div class="sh"><div class="st">Application</div><button class="btn btn-g" onclick="loadSettings()">Refresh</button></div>
+      <div id="settings-app" class="ov-grid"><div class="empty">Loading settings…</div></div>
+    </div>
+    <div class="card">
+      <div class="sh"><div class="st">Indexed Directories</div></div>
+      <div id="settings-dirs" class="dir-list"><div class="empty">Loading directories…</div></div>
+    </div>
+    <div class="card">
+      <div class="sh"><div class="st">Privacy and Processing</div></div>
+      <div style="font-size:.72rem;line-height:1.8;color:var(--text-dim)">
+        File metadata, extracted text, task state, and search vectors are stored in the local application data directory shown above.
+        Model requests use the configured Ollama endpoint. Basic scanning and storage views do not require Ollama.
+        The current page loads fonts and chart libraries from external CDNs; these hosts are listed above, so the UI is not fully offline yet.
+        The database and index are not encrypted by Memora. Keep this API bound to your own computer.
+      </div>
+    </div>
+  </div>
+
 </div><!-- /main -->
 </div><!-- /shell -->
 
 <script>
 /* ════════════════════════════════════════════
-   SMARTMEM — Frontend v2
+   Memora — Local-first file intelligence
    ════════════════════════════════════════════ */
 const BASE = '';
 const $ = id => document.getElementById(id);
+let lastSearchResults = [];
 
 async function api(method, path, body) {
   const opts = { method, headers: {'Content-Type':'application/json'} };
@@ -837,11 +862,19 @@ function fmt(b) {
   return b+' B';
 }
 function num(n) { return n == null ? '—' : Number(n).toLocaleString(); }
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[ch]));
+}
 
 function toast(msg, type='ok') {
   const t = document.createElement('div');
   t.className = 'toast ' + type;
-  t.innerHTML = '<span style="color:'+(type==='ok'?'var(--green)':'var(--red)')+'">'+(type==='ok'?'✓':'✗')+'</span> '+msg;
+  const icon = document.createElement('span');
+  icon.style.color = type==='ok' ? 'var(--green)' : 'var(--red)';
+  icon.textContent = type==='ok' ? '✓ ' : '✗ ';
+  t.append(icon, document.createTextNode(String(msg ?? '')));
   $('toasts').appendChild(t);
   setTimeout(()=>t.remove(), 3200);
 }
@@ -878,6 +911,7 @@ const PAGES = {
   organizer:  { title:'AI Organizer',   lbl:'Run Organizer',   fn:'runOrg' },
   search:     { title:'Semantic Search',lbl:'Build Doc Index', fn:'buildDocIdx(false)' },
   tasks:      { title:'Task Queue',     lbl:'Refresh',         fn:'loadTasks' },
+  settings:   { title:'Settings',       lbl:'Refresh',         fn:'loadSettings' },
 };
 let curPage = 'overview';
 
@@ -917,6 +951,7 @@ function loadPage(p) {
     organizer:   loadOrganizer,
     search:      loadSearchStatus,
     tasks:       loadTasks,
+    settings:    loadSettings,
   };
   if (map[p]) map[p]();
 }
@@ -1222,15 +1257,15 @@ function renderFileRows(files) {
     const badge = EXT_ICONS[ext] || ext.toUpperCase().slice(0,3) || '—';
     const col   = catColor(f.ai_category);
     return `<div class="file-row">
-      <div class="file-ext-badge" style="color:var(--${col==='dim'?'text-dim':col})">${badge}</div>
+      <div class="file-ext-badge" style="color:var(--${col==='dim'?'text-dim':col})">${esc(badge)}</div>
       <div style="flex:1;min-width:0">
-        <div class="file-name" title="${f.path}">${f.filename}</div>
-        <div class="file-path">${f.path}</div>
+        <div class="file-name" title="${esc(f.path)}">${esc(f.filename)}</div>
+        <div class="file-path">${esc(f.path)}</div>
       </div>
       <div class="file-meta">
         <div>${fmt(f.size_bytes)}</div>
-        <div style="margin-top:2px">${(f.modified_at||'').slice(0,10)}</div>
-        ${f.ai_category ? '<div class="tag '+col+'" style="margin-top:3px;font-size:.54rem">'+f.ai_category+'</div>' : ''}
+        <div style="margin-top:2px">${esc((f.modified_at||'').slice(0,10))}</div>
+        ${f.ai_category ? '<div class="tag '+col+'" style="margin-top:3px;font-size:.54rem">'+esc(f.ai_category)+'</div>' : ''}
       </div>
     </div>`;
   }).join('');
@@ -1245,9 +1280,9 @@ async function loadDirs() {
     ul.innerHTML = dirs.map(d=>`
       <li style="display:flex;align-items:flex-start;justify-content:space-between;padding:9px 10px;background:var(--bg3);border-radius:var(--r);margin-bottom:5px">
         <div style="min-width:0">
-          <div style="color:var(--amber);font-weight:600;font-size:.74rem">${d.alias||d.path.split(/[\\/]/).pop()}</div>
-          <div style="font-size:.63rem;color:var(--text-dim);margin-top:2px;word-break:break-all">${d.path}</div>
-          ${d.last_scanned?`<div style="font-size:.58rem;color:var(--text-faint);margin-top:3px">Scanned ${d.last_scanned.slice(0,16)}</div>`:''}
+          <div style="color:var(--amber);font-weight:600;font-size:.74rem">${esc(d.alias||d.path.split(/[\\/]/).pop())}</div>
+          <div style="font-size:.63rem;color:var(--text-dim);margin-top:2px;word-break:break-all">${esc(d.path)}</div>
+          ${d.last_scanned?`<div style="font-size:.58rem;color:var(--text-faint);margin-top:3px">Scanned ${esc(d.last_scanned.slice(0,16))}</div>`:''}
         </div>
         <button class="btn btn-d" onclick="removeDir(${d.id})" style="margin-left:10px;flex-shrink:0">✕</button>
       </li>`).join('');
@@ -1311,7 +1346,7 @@ function renderDiskBars(disks) {
     const col=pct>90?'var(--red)':pct>70?'var(--amber)':'var(--green)';
     return `<div class="disk-bar-card">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="font-family:var(--head);font-weight:700;font-size:.84rem">${d.mount}</span>
+        <span style="font-family:var(--head);font-weight:700;font-size:.84rem">${esc(d.mount)}</span>
         <span style="font-size:.68rem;color:var(--text-dim)">
           <span style="color:${col};font-weight:700">${pct}%</span> used
           &nbsp;·&nbsp;${fmt(d.used_bytes)} / ${fmt(d.total_bytes)}
@@ -1321,7 +1356,7 @@ function renderDiskBars(disks) {
       <div class="disk-bar-track">
         <div class="disk-bar-fill" style="width:${pct}%;background:${col}"></div>
       </div>
-      ${d.fstype?`<span style="font-size:.58rem;color:var(--text-faint)">${d.fstype}${d.device?' · '+d.device:''}</span>`:''}
+      ${d.fstype?`<span style="font-size:.58rem;color:var(--text-faint)">${esc(d.fstype)}${d.device?' · '+esc(d.device):''}</span>`:''}
     </div>`;
   }).join('');
 }
@@ -1335,7 +1370,7 @@ function renderCatBreakdown(cats) {
     const col = TAXONOMY[parent]?.color || 'var(--text-dim)';
     return `<div style="margin-bottom:9px">
       <div style="display:flex;justify-content:space-between;font-size:.68rem;margin-bottom:3px">
-        <span style="color:${col};font-weight:500">${c.category}</span>
+        <span style="color:${col};font-weight:500">${esc(c.category)}</span>
         <span style="color:var(--text-dim)">${num(c.file_count)} · ${fmt(c.total_bytes)}</span>
       </div>
       <div class="pb-w">
@@ -1384,31 +1419,33 @@ function renderExtChart(exts) {
 }
 
 // ── Duplicates ───────────────────────────────────────────────────────────────
+let _dupGroups = [];
 async function loadDups() {
   const ms=parseInt($('dms')?.value||'1024');
   try {
     const d=await api('GET','/duplicates?min_size='+ms);
+    _dupGroups=d.groups||[];
     $('dg').textContent=num(d.summary?.duplicate_groups);
     $('de').textContent=num(d.summary?.extra_files);
     $('dw').textContent=fmt(d.summary?.wasted_bytes);
     const c=$('dup-list');
-    if (!d.groups?.length){c.innerHTML='<div class="empty"><div class="empty-icon">✨</div>No duplicates found. Run Hash Files first.</div>';return;}
-    c.innerHTML=d.groups.map((g,gi)=>`
+    if (!_dupGroups.length){c.innerHTML='<div class="empty"><div class="empty-icon">✨</div>No duplicates found. Run Hash Files first.</div>';return;}
+    c.innerHTML=_dupGroups.map((g,gi)=>`
       <div class="dg">
         <div class="dh" onclick="document.getElementById('db-${gi}').classList.toggle('open')">
           <span><span class="tag red">${g.count} copies</span> &nbsp;
-          <span style="color:var(--text-dim);font-size:.65rem">${g.sha256?.slice(0,12)||''}…</span></span>
+          <span style="color:var(--text-dim);font-size:.65rem">${esc(g.sha256?.slice(0,12)||'')}…</span></span>
           <span style="color:var(--red);font-size:.68rem">wasted ${fmt(g.wasted_bytes)}</span>
         </div>
         <div class="db" id="db-${gi}">
           ${g.files.map((f,fi)=>`
             <div class="df">
               <div style="min-width:0;flex:1">
-                <div style="font-weight:500">${f.filename}</div>
-                <div class="dp">${f.path}</div>
-                <div style="font-size:.59rem;color:var(--text-faint);margin-top:2px">${fmt(f.size_bytes)} · ${(f.modified_at||'').slice(0,10)}</div>
+                <div style="font-weight:500">${esc(f.filename)}</div>
+                <div class="dp">${esc(f.path)}</div>
+                <div style="font-size:.59rem;color:var(--text-faint);margin-top:2px">${fmt(f.size_bytes)} · ${esc((f.modified_at||'').slice(0,10))}</div>
               </div>
-              ${fi===0?'<span class="tag green">keep</span>':`<button class="btn btn-d" onclick="delFile('${f.path.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">Delete</button>`}
+              ${fi===0?'<span class="tag green">keep</span>':`<button class="btn btn-d" onclick="deleteDuplicateFile(${gi},${fi})">Delete</button>`}
             </div>`).join('')}
         </div>
       </div>`).join('');
@@ -1418,6 +1455,10 @@ async function delFile(path){
   if(!confirm('Move to recycle bin?\n'+path))return;
   try{await api('DELETE','/delete-file',{path});toast('Moved to recycle');loadDups();}
   catch(e){toast(e.message,'err');}
+}
+function deleteDuplicateFile(groupIndex,fileIndex){
+  const path=_dupGroups[groupIndex]?.files?.[fileIndex]?.path;
+  if(path)delFile(path);
 }
 async function hashFiles(){
   try{const r=await api('POST','/hash-files');toast('Hashing queued ('+r.task_id.slice(0,8)+'…)');}
@@ -1431,24 +1472,24 @@ async function loadLF(){
   try{
     const d=await api('GET','/large-files?min_mb='+mb+'&unused_days='+days+'&limit=60');
     const c=$('lf-list');
-    if(!d.files?.length){c.innerHTML='<div class="empty"><div class="empty-icon">✅</div>No files found above '+mb+' MB.</div>';return;}
+    if(!d.files?.length){c.innerHTML='<div class="empty"><div class="empty-icon">✅</div>No files found above '+esc(mb)+' MB.</div>';return;}
     const max=d.files[0].size_bytes||1;
     c.innerHTML=d.files.map(f=>`
       <div class="lf">
         <div class="lft">
-          <span class="lfn">${f.filename}</span>
+          <span class="lfn">${esc(f.filename)}</span>
           <div style="display:flex;align-items:center;gap:7px">
             ${f.unused?'<span class="tag red">unused</span>':'<span class="tag green">active</span>'}
             <span class="lfs">${fmt(f.size_bytes)}</span>
           </div>
         </div>
-        <div class="lfp">${f.path}</div>
+        <div class="lfp">${esc(f.path)}</div>
         <div style="margin:5px 0"><div class="pb-w"><div class="pb ${f.unused?'red':'blue'}" style="width:${(f.size_bytes/max*100).toFixed(1)}%"></div></div></div>
         <div class="lfm">
-          <span>${f.extension||'—'}</span>
-          <span>modified: ${(f.modified_at||'').slice(0,10)}</span>
-          <span>accessed: ${(f.accessed_at||'').slice(0,10)}</span>
-          ${f.ai_category?'<span class="tag dim">'+f.ai_category+'</span>':''}
+          <span>${esc(f.extension||'—')}</span>
+          <span>modified: ${esc((f.modified_at||'').slice(0,10))}</span>
+          <span>accessed: ${esc((f.accessed_at||'').slice(0,10))}</span>
+          ${f.ai_category?'<span class="tag dim">'+esc(f.ai_category)+'</span>':''}
         </div>
       </div>`).join('');
   }catch(e){toast('Large files: '+e.message,'err');}
@@ -1553,10 +1594,10 @@ async function loadCatFiles(){
     table.innerHTML=`<table>
       <thead><tr><th>File</th><th>Category</th><th>Size</th><th>Modified</th></tr></thead>
       <tbody>${files.map(f=>`<tr>
-        <td style="font-weight:500;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.path}">${f.filename}</td>
-        <td><span class="tag ${catColor(f.ai_category)}">${f.ai_category||'—'}</span></td>
+        <td style="font-weight:500;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.path)}">${esc(f.filename)}</td>
+        <td><span class="tag ${catColor(f.ai_category)}">${esc(f.ai_category||'—')}</span></td>
         <td style="color:var(--text-dim)">${fmt(f.size_bytes)}</td>
-        <td style="color:var(--text-faint)">${(f.modified_at||'').slice(0,10)}</td>
+        <td style="color:var(--text-faint)">${esc((f.modified_at||'').slice(0,10))}</td>
       </tr>`).join('')}</tbody></table>`;
   }catch(e){toast('Cat files: '+e.message,'err');}
 }
@@ -1568,9 +1609,9 @@ async function loadMoveLog(){
     wrap.style.display='block';
     table.innerHTML=`<table><thead><tr><th>Original</th><th>New Path</th><th>When</th><th>Undone</th></tr></thead>
       <tbody>${rows.map(r=>`<tr>
-        <td style="font-size:.61rem;color:var(--text-dim);word-break:break-all">${r.original_path}</td>
-        <td style="font-size:.61rem;word-break:break-all">${r.new_path}</td>
-        <td style="white-space:nowrap;font-size:.6rem;color:var(--text-faint)">${(r.moved_at||'').slice(0,16)}</td>
+        <td style="font-size:.61rem;color:var(--text-dim);word-break:break-all">${esc(r.original_path)}</td>
+        <td style="font-size:.61rem;word-break:break-all">${esc(r.new_path)}</td>
+        <td style="white-space:nowrap;font-size:.6rem;color:var(--text-faint)">${esc((r.moved_at||'').slice(0,16))}</td>
         <td>${r.undone?'<span class="tag green">yes</span>':'<span class="tag dim">no</span>'}</td>
       </tr>`).join('')}</tbody></table>`;
   }catch(e){toast(e.message,'err');}
@@ -1588,15 +1629,15 @@ async function loadSearchStatus(){
     body.innerHTML=
       '<span style="color:var(--text-dim)">FAISS</span>'        +(s.faiss_installed?ok('installed'):bad('MISSING'))+
       '<span style="color:var(--text-dim)">Ollama</span>'       +(s.ollama_running?ok('running'):bad('offline'))+
-      '<span style="color:var(--text-dim)">Embed model</span>'  +(s.embed_model_available?ok(s.embed_model):bad('none'))+
+      '<span style="color:var(--text-dim)">Embed model</span>'  +(s.embed_model_available?ok(esc(s.embed_model)):bad('none'))+
       '<span style="color:var(--text-dim)">Vectors</span>'      +(s.index_vectors>0?ok(s.index_vectors.toLocaleString()):warn('0 — build index'))+
       '<span style="color:var(--text-dim)">Doc files</span>'    +(s.db_doc_files>0?ok(s.db_doc_files.toLocaleString()):warn('0'))+
       '<span style="color:var(--text-dim)">With text</span>'    +(s.db_with_text>0?ok(s.db_with_text.toLocaleString()):warn('0'));
     if(s.issues&&s.issues.length){
       body.innerHTML+='<div style="grid-column:1/-1;margin-top:6px;padding:7px;background:rgba(255,61,90,.07);border-radius:4px;border-left:2px solid var(--red)">'
-        +s.issues.map(i=>'<div style="color:var(--text-dim);margin-bottom:2px">• '+i+'</div>').join('')+'</div>';
+        +s.issues.map(i=>'<div style="color:var(--text-dim);margin-bottom:2px">• '+esc(i)+'</div>').join('')+'</div>';
     }
-  }catch(e){body.innerHTML='<span style="color:var(--red);grid-column:1/-1">Status error: '+e.message+'</span>';}
+  }catch(e){body.textContent='Status error: '+e.message;}
 }
 
 async function runSearch(){
@@ -1611,14 +1652,15 @@ async function runSearch(){
         +'<div style="font-size:.66rem;color:var(--text-faint);margin-top:6px">Build Doc Index first, then try again.</div></div>';
       return;
     }
+    lastSearchResults = r.results;
     const ICONS={pdf:'📄',doc:'📝',docx:'📝',txt:'📃',md:'📃',csv:'📊',xlsx:'📊',xls:'📊',
       pptx:'📋',ppt:'📋',py:'🐍',js:'⚡',ts:'⚡',java:'☕',go:'🐹',rs:'🦀',
       sh:'💻',html:'🌐',sql:'🗃',json:'🗃',ipynb:'🔬'};
     c.innerHTML='<div style="font-size:.66rem;color:var(--text-dim);margin-bottom:10px">'
       +'<strong style="color:var(--text)">'+r.results.length+' documents</strong>'
-      +' for &ldquo;<span style="color:var(--amber)">'+q+'</span>&rdquo;'
-      +' &nbsp;<span style="color:var(--text-faint)">cosine similarity</span></div>'
-      +r.results.map(function(f){
+      +' for &ldquo;<span style="color:var(--amber)">'+esc(q)+'</span>&rdquo;'
+      +' &nbsp;<span style="color:var(--text-faint)">hybrid relevance</span></div>'
+      +r.results.map(function(f,index){
         const ext=(f.extension||'').replace('.','').toLowerCase();
         const score=typeof f.score==='number'?f.score:0;
         const col=score>=0.75?'var(--green)':score>=0.5?'var(--amber)':'var(--text-dim)';
@@ -1627,13 +1669,15 @@ async function runSearch(){
         return '<div class="ri">'
           +'<div class="ric">'+(ICONS[ext]||'📄')+'</div>'
           +'<div style="flex:1;min-width:0">'
-          +'<div class="rn">'+f.filename+'</div>'
-          +'<div class="rp">'+f.path+'</div>'
+          +'<div class="rn">'+esc(f.filename)+'</div>'
+          +'<div class="rp">'+esc(f.path)+'</div>'
+          +(f.snippet?'<div class="rp" style="white-space:normal;margin-top:5px">“'+esc(f.snippet)+'”</div>':'')
+          +(f.match_reason?'<div style="font-size:.58rem;color:var(--text-faint);margin-top:3px">'+esc(f.match_reason)+'</div>':'')
           +'<div style="display:flex;gap:5px;margin-top:5px;align-items:center;flex-wrap:wrap">'
-          +(f.ai_category?'<span class="tag '+catColor(f.ai_category)+'">'+f.ai_category+'</span>':'')
+          +(f.ai_category?'<span class="tag '+catColor(f.ai_category)+'">'+esc(f.ai_category)+'</span>':'')
           +'<span class="tag dim">'+fmt(f.size_bytes)+'</span>'
-          +(f.extension?'<span class="tag dim">'+f.extension+'</span>':'')
-          +(f.modified_at?'<span style="font-size:.58rem;color:var(--text-faint)">'+f.modified_at.slice(0,10)+'</span>':'')
+          +(f.extension?'<span class="tag dim">'+esc(f.extension)+'</span>':'')
+          +(f.modified_at?'<span style="font-size:.58rem;color:var(--text-faint)">'+esc(f.modified_at.slice(0,10))+'</span>':'')
           +(sem!==undefined?'<span style="font-size:.56rem;color:var(--text-faint)">s:'+Math.round(sem*100)+'% k:'+Math.round((kw||0)*100)+'%</span>':'')
           +'</div>'
           +'<div class="sbar-w"><div class="sbar" style="width:'+Math.round(score*100)+'%;background:'+barCol+'"></div></div>'
@@ -1641,9 +1685,40 @@ async function runSearch(){
           +'<div style="text-align:right;padding-left:10px;flex-shrink:0;min-width:40px">'
           +'<div style="font-size:.9rem;font-weight:800;color:'+col+'">'+Math.round(score*100)+'%</div>'
           +'<div style="font-size:.56rem;color:var(--text-faint)">match</div>'
+          +'<button class="btn btn-g" style="margin-top:6px;font-size:.58rem" onclick="openSearchPath('+index+',false)">Open</button>'
+          +'<button class="btn btn-g" style="margin-top:4px;font-size:.58rem" onclick="openSearchPath('+index+',true)">Folder</button>'
           +'</div></div>';
       }).join('');
-  }catch(e){c.innerHTML='<div class="empty" style="color:var(--red)">Search failed: '+e.message+'</div>';}
+  }catch(e){c.textContent='Search failed: '+e.message;c.className='empty';}
+}
+
+async function openSearchPath(index, folder){
+  const file=lastSearchResults[index];
+  if(!file||!file.path)return;
+  try{
+    await api('POST',folder?'/open-folder':'/open-file',{path:file.path});
+    toast(folder?'Opened containing folder':'Opened file');
+  }catch(e){toast(e.message,'err');}
+}
+
+async function loadSettings(){
+  const app=$('settings-app'), dirs=$('settings-dirs');
+  if(!app||!dirs)return;
+  try{
+    const s=await api('GET','/settings');
+    app.innerHTML=[
+      ['Version',s.version],['Ollama endpoint',s.ollama_endpoint],
+      ['Database',s.database_path],['Index directory',s.index_path],
+      ['Document text limit',num(s.document_character_limit)+' characters'],
+      ['Passage size',num(s.chunk_size)+' characters'],
+      ['Passage overlap',num(s.chunk_overlap)+' characters'],
+      ['External UI hosts',(s.external_static_assets||[]).join(', ')]
+    ].map(([label,value])=>'<div style="padding:9px 11px;border:1px solid var(--border);border-radius:var(--r)">'
+      +'<div class="sl">'+esc(label)+'</div><div style="font-size:.7rem;margin-top:4px;word-break:break-all">'+esc(value)+'</div></div>').join('');
+    dirs.innerHTML=s.directories.length?s.directories.map(d=>'<div class="dir-row"><div><div class="dir-name">'+esc(d.alias||d.path)+'</div>'
+      +'<div class="dir-path">'+esc(d.path)+'</div></div><div class="tag dim">'+(d.last_scanned?'Scanned '+esc(d.last_scanned):'Not scanned')+'</div></div>').join('')
+      :'<div class="empty">No directories are indexed yet.</div>';
+  }catch(e){app.textContent='Could not load settings: '+e.message;dirs.textContent='Could not load directories.';}
 }
 
 async function buildDocIdx(force){
@@ -1681,12 +1756,12 @@ function renderFeed(tasks, elId, maxH){
   c.innerHTML=tasks.map(t=>`
     <div class="ti">
       <div class="td ${t.status}"></div>
-      <div style="width:80px;font-weight:600;font-size:.7rem">${t.task_type}</div>
+        <div style="width:80px;font-weight:600;font-size:.7rem">${esc(t.task_type)}</div>
       <div style="flex:0 0 80px">
         <div class="pb-w"><div class="pb ${t.status==='done'?'green':t.status==='failed'||t.status==='cancelled'?'red':''}" style="width:${(t.progress||0)*100}%"></div></div>
         <div style="font-size:.57rem;color:var(--text-faint);margin-top:2px">${((t.progress||0)*100).toFixed(0)}%</div>
       </div>
-      <div style="flex:1;color:var(--text-dim);font-size:.67rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 8px">${t.message||t.status}</div>
+      <div style="flex:1;color:var(--text-dim);font-size:.67rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 8px">${esc(t.message||t.status)}</div>
       <div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
         <span class="tag ${t.status==='done'?'green':t.status==='running'?'amber':t.status==='failed'?'red':t.status==='cancelled'?'orange':'dim'}">${t.status}</span>
         <span style="font-size:.58rem;color:var(--text-faint)">${(t.updated_at||'').slice(11,16)}</span>

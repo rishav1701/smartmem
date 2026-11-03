@@ -1,4 +1,5 @@
 import pytest
+import aiosqlite
 from fastapi import HTTPException
 
 from security import guard
@@ -54,4 +55,30 @@ def test_safe_delete_rejects_symlink(tmp_path, monkeypatch):
     with pytest.raises(HTTPException):
         guard.safe_delete(link)
     assert target.read_text(encoding="utf-8") == "keep"
+
+
+def test_safe_delete_refuses_directories(tmp_path, monkeypatch):
+    recycle = tmp_path / "recycle"
+    recycle.mkdir()
+    folder = tmp_path / "folder"
+    folder.mkdir()
+    (folder / "keep.txt").write_text("keep", encoding="utf-8")
+    monkeypatch.setattr(guard, "RECYCLE_BIN", recycle)
+
+    with pytest.raises(HTTPException):
+        guard.safe_delete(folder)
+    assert (folder / "keep.txt").read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.asyncio
+async def test_scope_check_supports_default_sqlite_row_factory(tmp_path):
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    async with aiosqlite.connect(":memory:") as db:
+        await db.execute("CREATE TABLE directories(path TEXT)")
+        await db.execute("INSERT INTO directories(path) VALUES (?)", (str(allowed),))
+        await guard.assert_under_allowed(allowed / "nested" / "file.txt", db)
+        with pytest.raises(HTTPException) as exc:
+            await guard.assert_under_allowed(tmp_path / "other.txt", db)
+    assert exc.value.status_code == 403
 
