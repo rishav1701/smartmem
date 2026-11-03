@@ -1,0 +1,1765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>SMARTMEM — AI Memory Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+:root{
+  --bg:#08090c;--bg2:#0d0f15;--bg3:#131520;--bg4:#191c27;
+  --border:#1a1d2e;--border2:#242840;
+  --amber:#f5a623;--green:#00e87a;--red:#ff3d5a;
+  --blue:#3d8ef0;--purple:#9d7cf5;--teal:#00c9c9;--orange:#ff7440;
+  --text:#dde0f0;--text-dim:#616880;--text-faint:#2e3248;
+  --mono:'JetBrains Mono',monospace;--head:'Syne',sans-serif;
+  --r:8px;--r2:14px;--t:140ms ease;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:14px;scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--mono);min-height:100vh;overflow-x:hidden}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+
+/* ── Layout ── */
+.shell{display:flex;min-height:100vh}
+
+/* ── Sidebar ── */
+.sidebar{
+  width:220px;min-width:220px;
+  background:var(--bg2);
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;
+  position:sticky;top:0;height:100vh;overflow-y:auto;
+}
+.logo{padding:22px 18px 16px;border-bottom:1px solid var(--border)}
+.logo-mark{
+  font-family:var(--head);font-size:1.25rem;font-weight:800;
+  color:var(--amber);display:flex;align-items:center;gap:9px;
+}
+.logo-mark .badge{
+  background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.25);
+  border-radius:5px;padding:3px 7px;font-size:.65rem;letter-spacing:.5px;
+}
+.logo-sub{font-size:.58rem;color:var(--text-dim);margin-top:4px;text-transform:uppercase;letter-spacing:2.5px}
+.nav{flex:1;padding:8px 0}
+.nav-group{margin-bottom:4px}
+.nav-sec{
+  font-size:.55rem;text-transform:uppercase;letter-spacing:3px;
+  color:var(--text-faint);padding:10px 18px 4px;
+}
+.ni{
+  display:flex;align-items:center;gap:9px;
+  padding:8px 18px;cursor:pointer;
+  color:var(--text-dim);font-size:.74rem;
+  transition:all var(--t);position:relative;
+  white-space:nowrap;user-select:none;border-radius:0;
+}
+.ni:hover{color:var(--text);background:var(--bg3)}
+.ni.active{color:var(--amber);background:rgba(245,166,35,.07)}
+.ni.active::before{
+  content:'';position:absolute;left:0;top:15%;bottom:15%;
+  width:2.5px;background:var(--amber);border-radius:0 3px 3px 0;
+}
+.ni .badge-count{
+  margin-left:auto;background:var(--bg4);border:1px solid var(--border);
+  border-radius:100px;padding:1px 6px;font-size:.57rem;color:var(--text-dim);
+  min-width:20px;text-align:center;
+}
+.sf{
+  padding:12px 18px;border-top:1px solid var(--border);
+  font-size:.6rem;color:var(--text-faint);
+  display:flex;align-items:center;gap:6px;
+}
+.sdot{width:6px;height:6px;border-radius:50%}
+.sdot.on{background:var(--green);animation:pulse 2s infinite}
+.sdot.off{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ── Topbar ── */
+.main{flex:1;overflow-y:auto;display:flex;flex-direction:column;min-width:0}
+.status-bar{
+  padding:8px 22px;font-size:.62rem;
+  background:var(--bg2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+}
+.topbar{
+  position:sticky;top:0;z-index:100;
+  background:rgba(8,9,12,.95);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);
+  padding:14px 28px;display:flex;align-items:center;gap:14px;
+  box-shadow:0 4px 16px rgba(0,0,0,.1);
+}
+.topbar-title{font-family:var(--head);font-size:1.1rem;font-weight:700;flex:1;color:var(--text)}
+.topbar-crumb{
+  font-size:.72rem;color:var(--text);
+  display:flex;align-items:center;gap:5px;flex:1;
+  font-family:var(--head);font-weight:600;
+}
+.crumb-sep{color:var(--text-faint)}
+
+/* ── Buttons ── */
+.btn{
+  border:none;border-radius:var(--r);padding:9px 16px;
+  font-family:var(--mono);font-size:.75rem;cursor:pointer;
+  transition:all var(--t);display:inline-flex;
+  align-items:center;gap:7px;white-space:nowrap;font-weight:600;
+}
+.btn-p{background:var(--amber);color:#08090c;font-weight:700}
+.btn-p:hover{background:#f7b84a;transform:translateY(-2px);box-shadow:0 6px 18px rgba(245,166,35,.35)}
+.btn-p:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+.btn-g{background:transparent;color:var(--text-dim);border:1px solid var(--border2)}
+.btn-g:hover{color:var(--text);border-color:var(--text-dim);background:rgba(221,224,240,.05)}
+.btn-d{background:transparent;color:var(--red);border:1px solid rgba(255,61,90,.25);padding:5px 9px;font-size:.67rem}
+.btn-d:hover{background:rgba(255,61,90,.1)}
+.btn-cancel{background:transparent;color:var(--orange);border:1px solid rgba(255,116,64,.3);padding:4px 9px;font-size:.65rem}
+.btn-cancel:hover{background:rgba(255,116,64,.1)}
+
+/* ── Pages ── */
+.page{display:none;padding:28px 28px;animation:fi 180ms ease;max-width:100%}
+.page.active{display:block}
+@keyframes fi{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+
+/* ── Stat cards ── */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
+.sc{
+  background:linear-gradient(135deg, var(--bg2) 0%, var(--bg3) 100%);
+  border:1px solid var(--border);
+  border-radius:var(--r2);padding:22px 20px;
+  position:relative;overflow:hidden;transition:all var(--t);
+  box-shadow:0 8px 32px rgba(0,0,0,.2);
+}
+.sc:hover{
+  border-color:var(--border2);
+  transform:translateY(-4px);
+  box-shadow:0 12px 48px rgba(0,0,0,.3);
+}
+.sc::before{
+  content:'';position:absolute;top:-50%;right:-50%;
+  width:200px;height:200px;background:radial-gradient(circle,rgba(255,255,255,.05) 0%,transparent 70%);
+  pointer-events:none;
+}
+.sc::after{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:var(--r2) var(--r2) 0 0}
+.sc.amber::after{background:linear-gradient(90deg,var(--amber),#ffcc80)}
+.sc.green::after{background:linear-gradient(90deg,var(--green),#80ffb8)}
+.sc.red::after{background:linear-gradient(90deg,var(--red),#ff8fa0)}
+.sc.blue::after{background:linear-gradient(90deg,var(--blue),#80b8ff)}
+.sc.purple::after{background:linear-gradient(90deg,var(--purple),#c0a8ff)}
+.sc.teal::after{background:linear-gradient(90deg,var(--teal),#80e8ff)}
+.sl{font-size:.68rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:2.5px;margin-bottom:10px;font-weight:600}
+.sv{font-family:var(--head);font-size:2.2rem;font-weight:800;line-height:1.1;color:var(--text)}
+.ss{font-size:.65rem;color:var(--text-dim);margin-top:8px;letter-spacing:.5px}
+
+/* ── Cards ── */
+.card{
+  background:linear-gradient(135deg, var(--bg2) 0%, var(--bg3) 100%);
+  border:1px solid var(--border);
+  border-radius:var(--r2);
+  padding:20px;
+  margin-bottom:16px;
+  box-shadow:0 8px 32px rgba(0,0,0,.15);
+  transition:all var(--t);
+}
+.card:hover{
+  border-color:var(--border2);
+  box-shadow:0 12px 40px rgba(0,0,0,.2);
+}
+.sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.st{font-family:var(--head);font-size:.95rem;font-weight:700;display:flex;align-items:center;gap:8px;color:var(--text)}
+.tc{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.tc{grid-template-columns:1fr}}
+
+/* ── Tags ── */
+.tag{display:inline-flex;align-items:center;padding:4px 10px;border-radius:100px;font-size:.64rem;font-weight:600;letter-spacing:.3px}
+.tag.amber{background:rgba(245,166,35,.15);color:var(--amber);border:1px solid rgba(245,166,35,.3)}
+.tag.green{background:rgba(0,232,122,.12);color:var(--green);border:1px solid rgba(0,232,122,.25)}
+.tag.red{background:rgba(255,61,90,.15);color:var(--red);border:1px solid rgba(255,61,90,.3)}
+.tag.blue{background:rgba(61,142,240,.12);color:var(--blue);border:1px solid rgba(61,142,240,.25)}
+.tag.purple{background:rgba(157,124,245,.12);color:var(--purple);border:1px solid rgba(157,124,245,.25)}
+.tag.teal{background:rgba(0,201,201,.12);color:var(--teal);border:1px solid rgba(0,201,201,.25)}
+.tag.orange{background:rgba(255,116,64,.15);color:var(--orange);border:1px solid rgba(255,116,64,.3)}
+.tag.dim{background:var(--bg4);color:var(--text-dim);border:1px solid var(--border)}
+
+/* ── Progress ── */
+.pb-w{background:var(--bg4);border-radius:100px;height:4px;overflow:hidden}
+.pb{height:100%;border-radius:100px;background:var(--amber);transition:width .45s ease}
+.pb.green{background:var(--green)}.pb.red{background:var(--red)}.pb.blue{background:var(--blue)}
+
+/* ── Table ── */
+.tw{overflow-x:auto;border-radius:var(--r);border:1px solid var(--border);box-shadow:0 4px 16px rgba(0,0,0,.1)}
+table{width:100%;border-collapse:collapse;font-size:.75rem}
+thead th{background:linear-gradient(90deg, var(--bg3) 0%, var(--bg2) 100%);padding:10px 14px;text-align:left;font-size:.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid var(--border);white-space:nowrap;font-weight:600}
+tbody tr{border-bottom:1px solid var(--border);transition:all var(--t)}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:rgba(19,21,32,.6)}
+tbody td{padding:10px 14px;vertical-align:middle}
+
+/* ── Inputs ── */
+.inp{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:7px 10px;color:var(--text);font-family:var(--mono);font-size:.74rem;outline:none;transition:border-color var(--t)}
+.inp:focus{border-color:var(--amber)}
+select.inp{cursor:pointer}
+
+/* ── Toggle ── */
+.trow{display:flex;align-items:center;gap:10px;font-size:.74rem}
+.tog{position:relative;width:34px;height:19px}
+.tog input{opacity:0;width:0;height:0}
+.ts{position:absolute;inset:0;background:var(--bg4);border:1px solid var(--border2);border-radius:100px;cursor:pointer;transition:all 200ms}
+.ts::before{content:'';position:absolute;left:3px;top:3px;width:11px;height:11px;border-radius:50%;background:var(--text-dim);transition:transform 200ms,background 200ms}
+.tog input:checked + .ts{background:rgba(245,166,35,.2);border-color:var(--amber)}
+.tog input:checked + .ts::before{transform:translateX(15px);background:var(--amber)}
+
+/* ── Toast ── */
+#toasts{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:7px;pointer-events:none}
+.toast{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:9px 15px;font-size:.72rem;animation:tst 200ms ease;max-width:300px;display:flex;align-items:center;gap:9px;pointer-events:all;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast.ok{border-color:rgba(0,232,122,.3)}.toast.err{border-color:rgba(255,61,90,.3)}
+@keyframes tst{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
+
+/* ── Spinner ── */
+.spin{width:13px;height:13px;border:2px solid var(--border2);border-top-color:var(--amber);border-radius:50%;animation:sp .7s linear infinite;display:inline-block;flex-shrink:0}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* ── Empty state ── */
+.empty{text-align:center;padding:40px 20px;color:var(--text-dim);font-size:.74rem}
+.empty-icon{font-size:2rem;margin-bottom:10px;opacity:.4}
+
+/* ── Category explorer ── */
+.cat-explorer{margin-top:6px}
+.cat-parent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-bottom:22px}
+.cat-parent-card{
+  background:linear-gradient(135deg, var(--bg2) 0%, var(--bg3) 100%);
+  border:1px solid var(--border);
+  border-radius:var(--r2);padding:18px;cursor:pointer;
+  transition:all var(--t);position:relative;overflow:hidden;
+  box-shadow:0 8px 24px rgba(0,0,0,.15);
+}
+.cat-parent-card:hover{
+  border-color:var(--border2);
+  transform:translateY(-4px);
+  box-shadow:0 12px 40px rgba(0,0,0,.25);
+}
+.cat-parent-card.active{border-color:var(--amber);background:linear-gradient(135deg, rgba(245,166,35,.1) 0%, var(--bg3) 100%)}
+.cat-parent-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:var(--r2) var(--r2) 0 0}
+.cat-icon-big{font-size:2rem;margin-bottom:10px}
+.cat-parent-name{font-family:var(--head);font-weight:700;font-size:.95rem;margin-bottom:4px}
+.cat-parent-count{font-size:.68rem;color:var(--text-dim)}
+.cat-parent-size{font-size:.72rem;color:var(--text-dim);margin-top:6px}
+
+/* Sub-category chips */
+.sub-chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px}
+.sub-chip{
+  background:var(--bg3);border:1px solid var(--border);
+  border-radius:100px;padding:4px 12px;font-size:.68rem;
+  cursor:pointer;transition:all var(--t);color:var(--text-dim);
+  display:flex;align-items:center;gap:5px;
+}
+.sub-chip:hover{border-color:var(--border2);color:var(--text)}
+.sub-chip.active{background:rgba(245,166,35,.12);border-color:var(--amber);color:var(--amber)}
+.sub-chip .sub-count{
+  background:var(--bg4);border-radius:100px;
+  padding:1px 6px;font-size:.57rem;color:var(--text-dim);
+}
+
+/* File list in explorer */
+.file-list-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 12px;background:var(--bg3);border:1px solid var(--border);
+  border-radius:var(--r) var(--r) 0 0;font-size:.65rem;color:var(--text-dim);
+}
+.file-row{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 12px;border-bottom:1px solid var(--border);
+  transition:background var(--t);font-size:.73rem;
+}
+.file-row:last-child{border-bottom:none}
+.file-row:hover{background:var(--bg3)}
+.file-ext-badge{
+  width:32px;height:32px;border-radius:6px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.6rem;font-weight:700;flex-shrink:0;
+  background:var(--bg4);border:1px solid var(--border);
+  color:var(--amber);
+}
+.file-name{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.file-path{font-size:.62rem;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-meta{font-size:.6rem;color:var(--text-faint);white-space:nowrap;text-align:right}
+
+/* ── Search results ── */
+.ri{
+  display:flex;align-items:flex-start;gap:12px;
+  padding:14px 16px;background:linear-gradient(135deg, var(--bg2) 0%, var(--bg3) 100%);
+  border-radius:var(--r);margin-bottom:8px;
+  border:1px solid var(--border);transition:all var(--t);
+  position:relative;overflow:hidden;
+}
+.ri:hover{border-color:var(--border2);transform:translateX(3px);box-shadow:0 4px 12px rgba(0,0,0,.15)}
+.ri::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;
+  width:3px;background:var(--amber);
+  border-radius:0 2px 2px 0;opacity:0;transition:opacity var(--t);
+}
+.ri:hover::before{opacity:1}
+.ric{
+  width:36px;height:36px;border-radius:7px;
+  background:var(--bg3);display:flex;align-items:center;
+  justify-content:center;flex-shrink:0;
+  font-size:.86rem;border:1px solid var(--border);
+}
+.rn{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem}
+.rp{font-size:.64rem;color:var(--text-dim);margin-top:3px;word-break:break-all}
+.sbar-w{width:56px;height:3px;background:var(--bg4);border-radius:100px;overflow:hidden;margin-top:6px;box-shadow:inset 0 1px 3px rgba(0,0,0,.3)}
+.sbar{height:100%;border-radius:100px;transition:width .4s ease;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+
+/* ── Task feed ── */
+.tf{overflow-y:auto}
+.ti{
+  display:flex;align-items:center;gap:9px;
+  padding:9px 12px;border-bottom:1px solid var(--border);
+  font-size:.71rem;transition:background var(--t);
+}
+.ti:last-child{border-bottom:none}.ti:hover{background:var(--bg3)}
+.td{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.td.done{background:var(--green)}.td.running{background:var(--amber);animation:pulse 1s infinite}
+.td.queued{background:var(--text-faint)}.td.failed{background:var(--red)}
+.td.cancelled{background:var(--orange)}
+
+/* ── Duplicates ── */
+.dg{border:1px solid var(--border);border-radius:var(--r);margin-bottom:9px;overflow:hidden}
+.dh{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:var(--bg3);cursor:pointer;font-size:.71rem}
+.dh:hover{background:var(--bg4)}
+.db{display:none;padding:2px 0}.db.open{display:block}
+.df{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border-bottom:1px solid var(--border);font-size:.71rem}
+.df:last-child{border-bottom:none}
+.dp{font-size:.63rem;color:var(--text-dim);margin-top:2px;word-break:break-all}
+
+/* ── Large files ── */
+.lf{
+  background:linear-gradient(135deg, var(--bg2) 0%, var(--bg3) 100%);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  padding:14px 16px;
+  margin-bottom:9px;
+  box-shadow:0 4px 12px rgba(0,0,0,.1);
+}
+.lf:hover{border-color:var(--border2);box-shadow:0 6px 16px rgba(0,0,0,.15)}
+.lft{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+.lfn{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;font-size:.76rem}
+.lfs{color:var(--red);font-weight:700;font-size:.76rem}
+.lfp{font-size:.64rem;color:var(--text-dim);margin-bottom:6px;word-break:break-all}
+.lfm{display:flex;gap:10px;font-size:.62rem;color:var(--text-faint)}
+
+/* ── Disk bar ── */
+.disk-bar-card{
+  background:linear-gradient(135deg, var(--bg2) 0%, var(--bg3) 100%);
+  border:1px solid var(--border);
+  border-radius:var(--r2);padding:16px;
+  margin-bottom:12px;
+  box-shadow:0 4px 16px rgba(0,0,0,.12);
+}
+.disk-bar-track{height:10px;background:var(--bg4);border-radius:100px;overflow:hidden;margin:10px 0 6px;box-shadow:inset 0 2px 4px rgba(0,0,0,.3)}
+.disk-bar-fill{height:100%;border-radius:100px;transition:width .6s ease;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+
+/* ── System strip ── */
+.sys-strip{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+  gap:14px;padding:16px;
+  background:linear-gradient(135deg, var(--bg2) 0%, var(--bg3) 100%);
+  border:1px solid var(--border);
+  border-radius:var(--r2);margin-bottom:24px;
+  box-shadow:0 8px 32px rgba(0,0,0,.2);
+}
+.sys-metric {
+  position:relative;
+  padding:16px;
+  background:rgba(13, 15, 21, 0.5);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  transition:all var(--t);
+}
+.sys-metric:hover {
+  border-color:var(--border2);
+  background:rgba(13, 15, 21, 0.8);
+}
+.sys-metric .sl{font-size:.62rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:1.8px;margin-bottom:8px;font-weight:600}
+.sys-metric .sv{font-family:var(--head);font-size:1.8rem;font-weight:800;line-height:1.2;color:var(--text)}
+.sys-metric .ss{font-size:.63rem;color:var(--text-dim);margin-top:6px;letter-spacing:.3px}
+
+/* ── Breadcrumb ── */
+.bc{display:flex;align-items:center;gap:5px;font-size:.68rem;margin-bottom:14px;flex-wrap:wrap}
+.bc span{color:var(--text-dim)}
+.bc a{color:var(--amber);cursor:pointer;text-decoration:none}
+.bc a:hover{text-decoration:underline}
+.bc .sep{color:var(--text-faint)}
+
+/* Category color accents */
+.cat-parent-card[data-cat="Academics"]::before{background:linear-gradient(90deg,var(--blue),#80b8ff)}
+.cat-parent-card[data-cat="Personal"]::before{background:linear-gradient(90deg,var(--green),#80ffb8)}
+.cat-parent-card[data-cat="Projects"]::before{background:linear-gradient(90deg,var(--amber),#ffcc80)}
+.cat-parent-card[data-cat="Media"]::before{background:linear-gradient(90deg,var(--purple),#c0a8ff)}
+.cat-parent-card[data-cat="Archives"]::before{background:linear-gradient(90deg,var(--orange),#ffaa80)}
+.cat-parent-card[data-cat="Others"]::before{background:linear-gradient(90deg,var(--text-dim),var(--border2))}
+
+#ollama-bar{padding:5px 22px;font-size:.61rem;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
+</style>
+</head>
+<body>
+<div id="toasts"></div>
+<div class="shell">
+
+<!-- ════ SIDEBAR ════ -->
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-mark">
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><rect width="20" height="20" rx="4" fill="#f5a623" opacity=".18"/><path d="M4 10h5M10 6v8M11 10h5" stroke="#f5a623" stroke-width="1.6" stroke-linecap="round"/></svg>
+      SMARTMEM
+    </div>
+    <div class="logo-sub">AI Memory Assistant</div>
+  </div>
+  <nav class="nav">
+    <div class="nav-group">
+      <div class="nav-sec">Core</div>
+      <div class="ni active" data-page="overview" onclick="go(this)">
+        <svg width="13" height="13" fill="none" viewBox="0 0 14 14"><rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="8" y="1" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="1" y="8" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>
+        Overview
+      </div>
+      <div class="ni" data-page="files" onclick="go(this)">
+        <svg width="13" height="13" fill="none" viewBox="0 0 14 14"><path d="M2 2h6l2 2v8H2V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 2v2h2" stroke="currentColor" stroke-width="1.3"/></svg>
+        File Explorer
+        <span class="badge-count" id="nav-files-count">—</span>
+      </div>
+      <div class="ni" data-page="directories" onclick="go(this)">
+        <svg width="13" height="13" fill="none" viewBox="0 0 14 14"><path d="M1 3.5A1.5 1.5 0 012.5 2h3l1.5 1.5H11.5A1.5 1.5 0 0113 5v5.5A1.5 1.5 0 0111.5 12h-9A1.5 1.5 0 011 10.5V3.5z" stroke="currentColor" stroke-width="1.3"/></svg>
+        Directories
+      </div>
+      <div class="ni" data-page="storage" onclick="go(this)">
+        <svg width="13" height="13" fill="none" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M7 3v4l2.5 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Storage
+      </div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-sec">Cleanup</div>
+      <div class="ni" data-page="duplicates" onclick="go(this)">
+        <svg width="13" height="13" fill="none" viewBox="0 0 14 14"><rect x="4" y="4" width="8" height="8" rx="1.2" stroke="currentColor" stroke-width="1.3"/><path d="M4 4V2.5A1.5 1.5 0 015.5 1H10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Duplicates
+      </div>
+      <div class="ni" data-page="largefiles" onclick="go(this)">
+        <svg width="13" height="13" fill="none" viewBox="0 0 14 14"><path d="M3 11V5.5L7 2l4 3.5V11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><rect x="5" y="7.5" width="4" height="3.5" stroke="currentColor" stroke-width="1.3"/></svg>
+        Large Files
+      </div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-sec">AI</div>
+      <div class="ni" data-page="organizer" onclick="go(this)">
+        <svg width="13" height="13" fill="none" viewBox="0 0 14 14"><path d="M2 7h10M7 2l5 5-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        AI Organizer
+      </div>
+      <div class="ni" data-page="search" onclick="go(this)">
+        <svg width="13" height="13" fill="none" viewBox="0 0 14 14"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.3"/><path d="M9.5 9.5l3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Semantic Search
+      </div>
+      <div class="ni" data-page="tasks" onclick="go(this)">
+        <svg width="13" height="13" fill="none" viewBox="0 0 14 14"><rect x="1" y="1" width="12" height="12" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4 7h6M4 4.5h6M4 9.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Task Queue
+        <span class="badge-count" id="nav-tasks-count">0</span>
+      </div>
+    </div>
+  </nav>
+  <div class="sf">
+    <span class="sdot on" id="ollama-dot"></span>
+    <span id="ollama-label">Checking…</span>
+  </div>
+</aside>
+
+<!-- ════ MAIN ════ -->
+<div class="main">
+  <div id="ollama-bar">
+    <span style="color:var(--text-dim)">Ollama:</span>
+    <span id="ob-status" style="color:var(--text-dim)">checking…</span>
+    <span style="color:var(--text-faint)">|</span>
+    <span style="color:var(--text-dim)">LLM:</span><span id="ob-llm">?</span>
+    <span style="color:var(--text-faint)">|</span>
+    <span style="color:var(--text-dim)">Embed:</span><span id="ob-embed">?</span>
+    <span style="margin-left:auto"><a href="http://localhost:8000/docs" target="_blank" style="color:var(--amber);text-decoration:none;font-size:.6rem">API Docs ↗</a></span>
+  </div>
+
+  <div class="topbar">
+    <div id="topbar-crumb" class="topbar-crumb">
+      <span id="pt">Overview</span>
+    </div>
+    <button class="btn btn-p" id="tb" onclick="tbAction()">
+      <span class="spin" id="tb-spin" style="display:none;width:11px;height:11px;border-width:1.5px"></span>
+      <span id="tb-lbl">Scan Now</span>
+    </button>
+    <button class="btn btn-g" onclick="loadPage(curPage)">
+      <svg width="11" height="11" fill="none" viewBox="0 0 14 14"><path d="M12 2a6 6 0 11-1 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Refresh
+    </button>
+  </div>
+
+  <!-- ████ OVERVIEW ████ -->
+  <div class="page active" id="page-overview">
+    <!-- Empty state guide -->
+    <div id="ov-empty-state" style="display:none;text-align:center;padding:60px 40px;background:linear-gradient(135deg, var(--bg2) 0%, var(--bg3) 100%);border:1px solid var(--border);border-radius:var(--r2);margin-bottom:24px">
+      <div style="font-size:3rem;margin-bottom:16px">🚀</div>
+      <div style="font-family:var(--head);font-size:1.2rem;font-weight:700;margin-bottom:10px;color:var(--text)">Get Started with SMARTMEM</div>
+      <div style="font-size:.85rem;color:var(--text-dim);margin-bottom:20px;max-width:500px;margin-left:auto;margin-right:auto">
+        No files scanned yet. Add your storage folders to begin analyzing and organizing your digital files.
+      </div>
+      <button class="btn btn-p" onclick="go(document.querySelector('[data-page=directories]'))">
+        <svg width="14" height="14" fill="none" viewBox="0 0 14 14"><path d="M1 3.5A1.5 1.5 0 012.5 2h3l1.5 1.5H11.5A1.5 1.5 0 0113 5v5.5A1.5 1.5 0 0111.5 12h-9A1.5 1.5 0 011 10.5V3.5z" stroke="currentColor" stroke-width="1.3"/></svg>
+        Add Directories
+      </button>
+    </div>
+
+    <div id="ov-data-section">
+      <div class="stats-row">
+        <div class="sc amber"><div class="sl">Total Files</div><div class="sv" id="ov-files">—</div><div class="ss">scanned files</div></div>
+        <div class="sc blue"><div class="sl">Total Size</div><div class="sv" id="ov-size">—</div><div class="ss">on disk</div></div>
+        <div class="sc red"><div class="sl">Duplicates</div><div class="sv" id="ov-dups">—</div><div class="ss" id="ov-wasted">—</div></div>
+        <div class="sc green"><div class="sl">AI Classified</div><div class="sv" id="ov-cats">—</div><div class="ss" id="ov-cats-pct">—</div></div>
+      </div>
+
+      <!-- System metrics -->
+      <div class="sys-strip" id="sys-strip">
+        <div class="sys-metric"><div class="sl">Disk Total</div><div class="sv" id="sm-disk-total">--</div><div class="ss" id="sm-disk-pct"></div></div>
+        <div class="sys-metric"><div class="sl">Disk Free</div><div class="sv" style="color:var(--green)" id="sm-disk-free">--</div><div class="ss" id="sm-disk-used"></div></div>
+        <div class="sys-metric"><div class="sl">RAM Used</div><div class="sv" style="color:var(--blue)" id="sm-ram">--</div><div class="ss" id="sm-ram-pct"></div></div>
+        <div class="sys-metric"><div class="sl">CPU</div><div class="sv" style="color:var(--amber)" id="sm-cpu">--</div><div class="ss" id="sm-cpu-cores"></div></div>
+        <div class="sys-metric"><div class="sl">I/O Read</div><div class="sv" style="color:var(--purple)" id="sm-io-read">--</div><div class="ss">since boot</div></div>
+        <div class="sys-metric"><div class="sl">I/O Write</div><div class="sv" style="color:var(--red)" id="sm-io-write">--</div><div class="ss">since boot</div></div>
+      </div>
+
+      <div class="tc">
+        <!-- Category cards - clickable to open File Explorer -->
+        <div class="card">
+          <div class="sh">
+            <div class="st">AI Categories</div>
+            <button class="btn btn-g" style="font-size:.63rem" onclick="go(document.querySelector('[data-page=files]'))">Browse Files →</button>
+          </div>
+          <div id="ov-cat-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"></div>
+        </div>
+        <!-- Mini task feed -->
+        <div class="card">
+          <div class="sh">
+            <div class="st">Recent Tasks</div>
+            <button class="btn btn-g" style="font-size:.63rem" onclick="go(document.querySelector('[data-page=tasks]'))">All →</button>
+          </div>
+          <div class="tf" id="mini-feed" style="max-height:260px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ████ FILE EXPLORER ████ -->
+  <div class="page" id="page-files">
+    <!-- Breadcrumb -->
+    <div class="bc" id="files-bc">
+      <a onclick="filesGoHome()">All Categories</a>
+    </div>
+
+    <!-- State: home = category parent grid, drill = sub-chips + file list -->
+    <div id="files-home">
+      <div id="cat-parent-grid" class="cat-parent-grid"></div>
+    </div>
+
+    <div id="files-drill" style="display:none">
+      <div class="sh" style="margin-bottom:10px">
+        <div class="st" id="drill-title">—</div>
+        <div style="display:flex;gap:7px;align-items:center">
+          <span id="drill-count" style="font-size:.66rem;color:var(--text-dim)"></span>
+          <select class="inp" id="files-sort" onchange="sortFileList()" style="font-size:.65rem;padding:4px 8px">
+            <option value="size">Size ↓</option>
+            <option value="name">Name A-Z</option>
+            <option value="date">Modified ↓</option>
+          </select>
+        </div>
+      </div>
+      <!-- Sub-category chips -->
+      <div class="sub-chips" id="sub-chips"></div>
+      <!-- File rows -->
+      <div style="border:1px solid var(--border);border-radius:var(--r);overflow:hidden" id="file-rows-wrap">
+        <div class="file-list-header">
+          <span id="file-list-label">Files</span>
+          <span id="file-list-size"></span>
+        </div>
+        <div id="file-rows"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ████ DIRECTORIES ████ -->
+  <div class="page" id="page-directories">
+    <div class="tc">
+      <div class="card">
+        <div class="st" style="margin-bottom:12px">Add Directory</div>
+        <div style="display:flex;gap:7px;margin-bottom:9px">
+          <input class="inp" id="dp" placeholder="C:\Users\You\Downloads" style="flex:1"/>
+          <input class="inp" id="da" placeholder="alias" style="flex:0.35"/>
+          <button class="btn btn-p" onclick="addDir()">Add</button>
+        </div>
+        <div style="font-size:.64rem;color:var(--text-dim);padding:9px;background:var(--bg3);border-radius:var(--r);border-left:2px solid var(--amber)">
+          Path traversal is blocked. Only added directories are scanned.
+        </div>
+      </div>
+      <div class="card">
+        <div class="sh">
+          <div class="st">Saved Directories</div>
+          <button class="btn btn-p" onclick="startScan()">
+            <span class="spin" id="scan-spin" style="display:none;width:10px;height:10px;border-width:1.5px"></span>
+            Scan All
+          </button>
+        </div>
+        <ul id="dir-list" style="list-style:none"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ████ STORAGE ████ -->
+  <div class="page" id="page-storage">
+    <div id="disk-bars" style="margin-bottom:14px"></div>
+    <div class="stats-row">
+      <div class="sc amber"><div class="sl">Scanned Files</div><div class="sv" id="s-files">—</div></div>
+      <div class="sc blue"><div class="sl">Scanned Size</div><div class="sv" id="s-size">—</div></div>
+      <div class="sc purple"><div class="sl">Avg File</div><div class="sv" id="s-avg">—</div></div>
+      <div class="sc red"><div class="sl">Largest File</div><div class="sv" id="s-max">—</div><div class="ss" id="s-max-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div></div>
+    </div>
+    <div class="stats-row" style="margin-bottom:14px">
+      <div class="sc green"><div class="sl">Hashed</div><div class="sv" id="s-hashed">—</div><div class="ss" id="s-hashed-pct"></div></div>
+      <div class="sc amber"><div class="sl">Classified</div><div class="sv" id="s-classified">—</div><div class="ss" id="s-classified-pct"></div></div>
+      <div class="sc blue"><div class="sl">Doc Indexed</div><div class="sv" id="s-embedded">—</div><div class="ss" id="s-embedded-pct"></div></div>
+      <div class="sc teal"><div class="sl">Extensions</div><div class="sv" id="s-exts">—</div></div>
+    </div>
+    <div class="tc">
+      <div class="card">
+        <div class="st" style="margin-bottom:12px">Storage Tree</div>
+        <div id="sunburst" style="width:100%;max-width:380px;aspect-ratio:1;margin:0 auto"></div>
+        <div id="s-dates" style="text-align:center;margin-top:8px;font-size:.6rem;color:var(--text-faint)"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="card">
+          <div class="st" style="margin-bottom:12px">By Extension</div>
+          <div style="height:210px;position:relative"><canvas id="ext-chart"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="st" style="margin-bottom:12px">By Category</div>
+          <div id="cat-breakdown"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ████ DUPLICATES ████ -->
+  <div class="page" id="page-duplicates">
+    <div class="stats-row">
+      <div class="sc red"><div class="sl">Groups</div><div class="sv" id="dg">—</div></div>
+      <div class="sc amber"><div class="sl">Extra Files</div><div class="sv" id="de">—</div></div>
+      <div class="sc red"><div class="sl">Wasted</div><div class="sv" id="dw">—</div></div>
+      <div class="sc blue">
+        <div class="sl">Min Size (bytes)</div>
+        <input class="inp" id="dms" value="1024" style="width:100%;margin-top:5px;padding:4px 7px" onchange="loadDups()"/>
+      </div>
+    </div>
+    <div class="sh"><div class="st">Duplicate Groups</div><button class="btn btn-g" onclick="loadDups()">Reload</button></div>
+    <div id="dup-list"></div>
+  </div>
+
+  <!-- ████ LARGE FILES ████ -->
+  <div class="page" id="page-largefiles">
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:.72rem;color:var(--text-dim)">Min (MB)<input class="inp" id="lf-mb" value="100" style="width:70px;margin-left:7px"/></label>
+        <label style="font-size:.72rem;color:var(--text-dim)">Unused days<input class="inp" id="lf-days" value="90" style="width:70px;margin-left:7px"/></label>
+        <button class="btn btn-p" onclick="loadLF()">Apply</button>
+      </div>
+    </div>
+    <div id="lf-list"></div>
+  </div>
+
+  <!-- ████ ORGANIZER ████ -->
+  <div class="page" id="page-organizer">
+    <div id="org-model-bar" style="padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);margin-bottom:12px;font-size:.66rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="color:var(--text-dim)">Model:</span>
+      <span id="org-model-name" style="color:var(--amber)">detecting…</span>
+      <span style="color:var(--text-faint)">|</span>
+      <span style="color:var(--text-dim)">Categories:</span>
+      <span id="org-cat-count" style="color:var(--text)">24</span>
+      <span style="color:var(--text-faint)">|</span>
+      <span style="color:var(--text-dim)">Method: <span id="org-method" style="color:var(--text)">—</span></span>
+    </div>
+    <div class="tc">
+      <div class="card">
+        <div class="st" style="margin-bottom:12px">AI File Organizer</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div>
+            <div style="font-size:.66rem;color:var(--text-dim);margin-bottom:5px">Target directory <span style="color:var(--text-faint)">(live mode only)</span></div>
+            <input class="inp" id="org-dir" placeholder="D:/Organized" style="width:100%"/>
+          </div>
+          <div class="trow">
+            <label class="tog"><input type="checkbox" id="dry-run" checked/><span class="ts"></span></label>
+            <span id="dry-label" style="color:var(--amber);font-size:.73rem">Dry Run — classify only</span>
+          </div>
+          <div class="trow">
+            <label class="tog"><input type="checkbox" id="force-reclassify"/><span class="ts"></span></label>
+            <span style="color:var(--text-dim);font-size:.73rem">Force re-classify existing</span>
+          </div>
+          <div id="org-info" style="font-size:.64rem;color:var(--text-dim);padding:9px;background:var(--bg3);border-radius:var(--r);border-left:2px solid var(--amber)">
+            Dry Run: files classified but not moved.
+          </div>
+          <div style="display:flex;gap:7px;flex-wrap:wrap">
+            <button class="btn btn-p" onclick="runOrg()">Run Organizer</button>
+            <button class="btn btn-g" onclick="undoOrg()">↩ Undo</button>
+            <button class="btn btn-g" onclick="loadMoveLog()">Log</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Taxonomy tree -->
+      <div class="card">
+        <div class="st" style="margin-bottom:12px">Taxonomy (24 sub-categories)</div>
+        <div id="org-taxonomy" style="display:flex;flex-direction:column;gap:10px"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:0">
+      <div class="sh">
+        <div class="st">Classified Files</div>
+        <div style="display:flex;gap:7px;align-items:center">
+          <select class="inp" id="org-filter" onchange="loadCatFiles()" style="font-size:.65rem">
+            <option value="">All</option>
+          </select>
+          <button class="btn btn-g" style="font-size:.63rem" onclick="loadCatFiles()">Refresh</button>
+        </div>
+      </div>
+      <div class="tw" id="org-table"></div>
+    </div>
+
+    <div id="move-log-wrap" style="display:none" class="card">
+      <div class="sh">
+        <div class="st">Move Log</div>
+        <button class="btn btn-g" style="font-size:.63rem" onclick="$('move-log-wrap').style.display='none'">Close</button>
+      </div>
+      <div class="tw" id="move-log-table"></div>
+    </div>
+  </div>
+
+  <!-- ████ SEARCH ████ -->
+  <div class="page" id="page-search">
+    <div style="padding:10px 13px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);margin-bottom:13px;font-size:.66rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-family:var(--head);font-weight:700;font-size:.8rem">Search Engine Status</span>
+        <button class="btn btn-g" style="font-size:.6rem;padding:4px 8px" onclick="loadSearchStatus()">Check</button>
+      </div>
+      <div id="search-status-body" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px 14px">
+        <span style="color:var(--text-dim)">Loading…</span>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="st">Document Search</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span class="tag amber">docs only</span>
+          <span class="tag dim" id="sq-model-name" style="font-size:.58rem">—</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:7px;margin-bottom:8px">
+        <input class="inp" id="sq" placeholder="e.g. machine learning notes or Q3 budget report" style="flex:1;font-size:.76rem" onkeydown="if(event.key==='Enter')runSearch()"/>
+        <button class="btn btn-p" onclick="runSearch()">Search</button>
+      </div>
+      <div style="display:flex;gap:7px;margin-bottom:9px;flex-wrap:wrap">
+        <button class="btn btn-g" style="flex:1;font-size:.68rem" onclick="buildDocIdx(false)">Build Doc Index</button>
+        <button class="btn btn-g" style="flex:1;font-size:.68rem;color:var(--red);border-color:rgba(255,61,90,.3)" onclick="buildDocIdx(true)">Force Rebuild</button>
+      </div>
+      <div style="font-size:.62rem;color:var(--text-dim);padding:7px;background:var(--bg3);border-radius:var(--r)">
+        Indexes PDF, DOCX, TXT, MD, CSV, XLSX, code files + more.
+        Uses real content extraction + FAISS cosine similarity.
+      </div>
+    </div>
+    <div id="search-res" style="margin-top:13px">
+      <div class="empty">
+        <div class="empty-icon">🔍</div>
+        <div>Type a natural language query and press Search</div>
+        <div style="font-size:.65rem;color:var(--text-faint);margin-top:5px">Tip: describe what the document is about</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ████ TASKS ████ -->
+  <div class="page" id="page-tasks">
+    <div class="stats-row">
+      <div class="sc green"><div class="sl">Done</div><div class="sv" id="ts-d">—</div></div>
+      <div class="sc amber"><div class="sl">Running</div><div class="sv" id="ts-r">—</div></div>
+      <div class="sc" style="--bg:var(--bg2)"><div class="sl">Queued</div><div class="sv" id="ts-q">—</div></div>
+      <div class="sc red"><div class="sl">Failed</div><div class="sv" id="ts-f">—</div></div>
+      <div class="sc orange" style="--bg:var(--bg2)"><div class="sl">Cancelled</div><div class="sv" id="ts-c">—</div></div>
+    </div>
+    <div class="card">
+      <div class="sh">
+        <div class="st">Task Queue <span style="font-size:.65rem;color:var(--text-dim);font-family:var(--mono);font-weight:400">(last 10)</span></div>
+        <div style="display:flex;gap:7px">
+          <button class="btn btn-g" style="font-size:.63rem" onclick="loadTasks()">Refresh</button>
+          <button class="btn btn-g" style="font-size:.63rem;color:var(--red);border-color:rgba(255,61,90,.25)" onclick="clearDoneTasks()">Clear Done</button>
+        </div>
+      </div>
+      <div id="task-feed"></div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+</div><!-- /shell -->
+
+<script>
+/* ════════════════════════════════════════════
+   SMARTMEM — Frontend v2
+   ════════════════════════════════════════════ */
+const BASE = '';
+const $ = id => document.getElementById(id);
+
+async function api(method, path, body) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(BASE + '/api' + path, opts);
+  if (!r.ok) {
+    const t = await r.text().catch(()=>'');
+    throw new Error(r.status + ': ' + t.slice(0,120));
+  }
+  return r.json();
+}
+
+function fmt(b) {
+  if (b == null || isNaN(b)) return '—';
+  if (b >= 1e12) return (b/1e12).toFixed(1)+' TB';
+  if (b >= 1e9)  return (b/1e9).toFixed(1)+' GB';
+  if (b >= 1e6)  return (b/1e6).toFixed(1)+' MB';
+  if (b >= 1e3)  return (b/1e3).toFixed(1)+' KB';
+  return b+' B';
+}
+function num(n) { return n == null ? '—' : Number(n).toLocaleString(); }
+
+function toast(msg, type='ok') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.innerHTML = '<span style="color:'+(type==='ok'?'var(--green)':'var(--red)')+'">'+(type==='ok'?'✓':'✗')+'</span> '+msg;
+  $('toasts').appendChild(t);
+  setTimeout(()=>t.remove(), 3200);
+}
+function setBusy(f) { $('tb').disabled=f; $('tb-spin').style.display=f?'inline-block':'none'; }
+
+// ── TAXONOMY definition (mirrors backend CATEGORIES) ─────────────────────────
+const TAXONOMY = {
+  Academics: { icon:'📚', color:'var(--blue)',   subs:['Lectures','Assignments','Research','Exams','Textbooks'] },
+  Personal:  { icon:'👤', color:'var(--green)',  subs:['Finance','Health','Legal','Family','Travel'] },
+  Projects:  { icon:'⚙️', color:'var(--amber)',  subs:['Code','Design','Planning','Documentation'] },
+  Media:     { icon:'🎬', color:'var(--purple)', subs:['Photos','Videos','Music','Podcasts'] },
+  Archives:  { icon:'🗜️', color:'var(--orange)', subs:['Backups','Compressed','Installers'] },
+  Others:    { icon:'📄', color:'var(--text-dim)', subs:[] },
+};
+
+const CAT_COLOR = {
+  Academics:'blue', Personal:'green', Projects:'amber',
+  Media:'purple', Archives:'orange', Others:'dim',
+};
+function catColor(cat) {
+  if (!cat) return 'dim';
+  const parent = cat.split('/')[0];
+  return CAT_COLOR[parent] || 'dim';
+}
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+const PAGES = {
+  overview:   { title:'Overview',       lbl:'Scan Now',        fn:'startScan' },
+  files:      { title:'File Explorer',  lbl:'Refresh',         fn:'()=>loadPage("files")' },
+  directories:{ title:'Directories',    lbl:'Scan All',        fn:'startScan' },
+  storage:    { title:'Storage',        lbl:'Refresh',         fn:'loadStorage' },
+  duplicates: { title:'Duplicates',     lbl:'Hash Files',      fn:'hashFiles' },
+  largefiles: { title:'Large Files',    lbl:'Apply Filter',    fn:'loadLF' },
+  organizer:  { title:'AI Organizer',   lbl:'Run Organizer',   fn:'runOrg' },
+  search:     { title:'Semantic Search',lbl:'Build Doc Index', fn:'buildDocIdx(false)' },
+  tasks:      { title:'Task Queue',     lbl:'Refresh',         fn:'loadTasks' },
+};
+let curPage = 'overview';
+
+function go(el) {
+  document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  curPage = el.dataset.page;
+  $('page-'+curPage).classList.add('active');
+  const cfg = PAGES[curPage];
+  $('pt').textContent = cfg.title;
+  $('tb-lbl').textContent = cfg.lbl;
+  setCrumb([cfg.title]);
+  loadPage(curPage);
+}
+
+function setCrumb(parts) {
+  $('topbar-crumb').innerHTML = parts.map((p,i)=>
+    i===0 ? '<span style="color:var(--text)">'+p+'</span>'
+          : '<span class="crumb-sep">/</span><span style="color:var(--amber)">'+p+'</span>'
+  ).join('');
+}
+
+function tbAction() {
+  const cfg = PAGES[curPage];
+  if (cfg.fn) try { eval(cfg.fn + '()'); } catch(e) { if(window[cfg.fn]) window[cfg.fn](); }
+}
+
+function loadPage(p) {
+  const map = {
+    overview:    loadOverview,
+    files:       loadFileExplorer,
+    directories: loadDirs,
+    storage:     loadStorage,
+    duplicates:  loadDups,
+    largefiles:  loadLF,
+    organizer:   loadOrganizer,
+    search:      loadSearchStatus,
+    tasks:       loadTasks,
+  };
+  if (map[p]) map[p]();
+}
+
+// ── Ollama status ───────────────────────────────────────────────────────────
+async function checkOllama() {
+  try {
+    const s = await api('GET', '/ollama-status');
+    const dot = $('ollama-dot');
+    const label = $('ollama-label');
+    const obStatus = $('ob-status');
+    
+    if (s.running && s.models && s.models.length > 0) {
+      dot.className = 'sdot on';
+      label.textContent = 'Ollama OK';
+      obStatus.innerHTML = '<span style="color:var(--green)">✓ online</span>';
+      
+      const models = s.models || [];
+      const hasLlm = models.some(m=>m.includes('llama')||m.includes('mistral')||m.includes('gemma'));
+      const hasEmbed = models.some(m=>m.includes('embed'));
+      
+      $('ob-llm').innerHTML   = hasLlm 
+        ? '<span style="color:var(--green)">✓</span>' 
+        : '<span style="color:var(--orange)">⚠ no LLM</span>';
+      $('ob-embed').innerHTML = hasEmbed 
+        ? '<span style="color:var(--green)">✓</span>' 
+        : '<span style="color:var(--orange)">⚠ no embed</span>';
+      
+      console.log('✓ Ollama online with models:', models);
+    } else {
+      dot.className = 'sdot off';
+      label.textContent = 'Ollama Offline';
+      obStatus.innerHTML = '<span style="color:var(--red)">✗ offline</span>';
+      $('ob-llm').innerHTML = '<span style="color:var(--red)">✗</span>';
+      $('ob-embed').innerHTML = '<span style="color:var(--red)">✗</span>';
+      console.warn('⚠ Ollama not available');
+    }
+  } catch(e) {
+    console.error('Ollama check error:', e);
+    $('ollama-dot').className = 'sdot off';
+    $('ollama-label').textContent = 'Ollama Error';
+    $('ob-status').innerHTML = '<span style="color:var(--red)">✗ error</span>';
+    $('ob-llm').innerHTML = '<span style="color:var(--red)">✗</span>';
+    $('ob-embed').innerHTML = '<span style="color:var(--red)">✗</span>';
+  }
+}
+
+// ── System metrics ──────────────────────────────────────────────────────────
+async function loadSystemMetrics() {
+  try {
+    const m = await api('GET', '/system-metrics');
+    if (m.error) {
+      console.warn('System metrics error:', m.error);
+      return;
+    }
+    
+    const el = id => document.getElementById(id);
+    if (!el('sm-disk-total')) return;
+    
+    // Disk
+    const d = m.disk || {};
+    el('sm-disk-total').textContent = (d.total_gb||0).toFixed(1)+' GB';
+    el('sm-disk-pct').textContent   = (d.percent_used||0).toFixed(1)+'% used';
+    el('sm-disk-free').textContent  = (d.free_gb||0).toFixed(1)+' GB';
+    el('sm-disk-used').textContent  = (d.used_gb||0).toFixed(1)+' GB used';
+    
+    // Memory
+    const r = m.memory || {};
+    el('sm-ram').textContent        = (r.used_gb||0).toFixed(1)+' GB';
+    el('sm-ram-pct').textContent    = (r.percent_used||0).toFixed(1)+'% of '+(r.total_gb||0).toFixed(1)+' GB';
+    
+    // CPU
+    const c = m.cpu || {};
+    el('sm-cpu').textContent        = (c.percent||0).toFixed(1)+'%';
+    el('sm-cpu-cores').textContent  = (c.cores||'?')+' cores';
+    
+    // I/O
+    const io = m.io || {};
+    el('sm-io-read').textContent    = (io.total_read_gb||0).toFixed(2)+' GB';
+    el('sm-io-write').textContent   = (io.total_write_gb||0).toFixed(2)+' GB';
+  } catch(e) {
+    console.error('loadSystemMetrics failed:', e);
+  }
+}
+
+// ── Overview ────────────────────────────────────────────────────────────────
+async function loadOverview() {
+  try {
+    const [st, dup, cats, tasks] = await Promise.all([
+      api('GET', '/storage-analysis'),
+      api('GET', '/duplicates?min_size=1'),
+      api('GET', '/categories'),
+      api('GET', '/tasks?limit=5'),
+    ]);
+    const s = st.stats || {};
+    const dupSummary = dup.summary || {};
+    const catData = cats.categories || {};
+    const total = s.total_files || 0;
+    
+    // Show/hide empty state
+    const emptyState = $('ov-empty-state');
+    const dataSection = $('ov-data-section');
+    if (total === 0) {
+      emptyState.style.display = 'block';
+      dataSection.style.display = 'none';
+    } else {
+      emptyState.style.display = 'none';
+      dataSection.style.display = 'block';
+    }
+    
+    // Display overview stats
+    $('ov-files').textContent    = num(s.total_files || 0);
+    $('ov-size').textContent     = fmt(s.total_bytes || 0);
+    $('ov-dups').textContent     = num(dupSummary.duplicate_groups || 0);
+    $('ov-wasted').textContent   = fmt(dupSummary.wasted_bytes || 0)+' wasted';
+    
+    const classified = cats.total_classified || 0;
+    $('ov-cats').textContent    = num(classified);
+    $('ov-cats-pct').textContent = total ? ((classified/total)*100).toFixed(1)+'% of files' : '0%';
+    
+    renderOvCatGrid(catData);
+    renderFeed(tasks, 'mini-feed', 260);
+    
+    // Update sidebar badge
+    $('nav-files-count').textContent = num(total);
+  } catch(e) { 
+    console.error('Overview error:', e);
+    toast('Overview error: '+e.message,'err'); 
+  }
+}
+
+function renderOvCatGrid(cats) {
+  const grid = $('ov-cat-grid');
+  const items = Object.entries(TAXONOMY).map(([parent, def]) => {
+    // Count all files in this parent and subs
+    let count = 0;
+    Object.entries(cats).forEach(([cat, n]) => {
+      if (cat === parent || cat.startsWith(parent+'/')) count += n;
+    });
+    if (count === 0) return null; // Skip empty categories
+    const color = def.color || 'var(--text)';
+    return `<div class="cc" style="cursor:pointer;padding:14px;background:linear-gradient(135deg,rgba(61,142,240,.12) 0%,rgba(61,142,240,.06) 100%);border:1px solid var(--border);border-radius:var(--r);transition:all var(--t);position:relative;overflow:hidden" onmouseover="this.style.transform='translateY(-2px)';this.style.borderColor='${color}';this.style.boxShadow='0 6px 16px rgba(0,0,0,.2)'" onmouseout="this.style.transform='translateY(0)';this.style.borderColor='var(--border)';this.style.boxShadow='none'" onclick="openCatParent('${parent}')">
+      <div class="ci" style="font-size:2rem;margin-bottom:8px">${def.icon}</div>
+      <div class="cn" style="color:${color};font-weight:700;font-size:.9rem;margin-bottom:2px">${parent}</div>
+      <div class="cv" style="font-size:1.6rem;font-weight:900;color:${color}">${num(count)}</div>
+      <div style="font-size:.6rem;color:var(--text-faint);margin-top:4px;text-transform:uppercase;letter-spacing:.8px">files</div>
+    </div>`;
+  }).filter(x=>x);
+  
+  if (items.length === 0) {
+    grid.innerHTML = '<div style="grid-column:1/-1;padding:40px 20px;text-align:center;color:var(--text-dim)"><div style="font-size:2.5rem;margin-bottom:12px;opacity:.5">📁</div><div style="font-size:.78rem">No files classified yet</div><div style="font-size:.65rem;color:var(--text-faint);margin-top:4px">Scan your directories to start organizing</div></div>';
+  } else {
+    grid.innerHTML = items.join('');
+  }
+}
+
+function openCatParent(parent) {
+  // Navigate to File Explorer and drill into that parent
+  go(document.querySelector('[data-page=files]'));
+  filesOpenParent(parent);
+}
+
+// ── File Explorer ───────────────────────────────────────────────────────────
+let _explorerCatData = {};   // {cat: count}
+let _activeSub = null;
+let _activeParent = null;
+let _fileCache = [];
+
+async function loadFileExplorer() {
+  try {
+    const cats = await api('GET', '/categories');
+    _explorerCatData = cats.categories || {};
+    filesGoHome();
+  } catch(e) { toast('Explorer error: '+e.message,'err'); }
+}
+
+function filesGoHome() {
+  _activeParent = null;
+  _activeSub    = null;
+  $('files-home').style.display = 'block';
+  $('files-drill').style.display = 'none';
+  setCrumb(['File Explorer']);
+  renderParentGrid();
+}
+
+function renderParentGrid() {
+  const grid = $('cat-parent-grid');
+  grid.innerHTML = Object.entries(TAXONOMY).map(([parent, def]) => {
+    let count = 0, bytes = 0;
+    Object.entries(_explorerCatData).forEach(([cat, n]) => {
+      if (cat === parent || cat.startsWith(parent+'/')) count += n;
+    });
+    const subList = def.subs.length > 0
+      ? '<div style="margin-top:7px;display:flex;flex-wrap:wrap;gap:4px">'
+        + def.subs.map(s=>`<span class="tag dim" style="font-size:.55rem">${s}</span>`).join('')
+        + '</div>'
+      : '';
+    return `<div class="cat-parent-card" data-cat="${parent}" onclick="filesOpenParent('${parent}')">
+      <div class="cat-icon-big">${def.icon}</div>
+      <div class="cat-parent-name" style="color:${def.color}">${parent}</div>
+      <div class="cat-parent-count">${num(count)} files</div>
+      ${subList}
+    </div>`;
+  }).join('');
+}
+
+async function filesOpenParent(parent) {
+  _activeParent = parent;
+  _activeSub    = null;
+  $('files-home').style.display = 'none';
+  $('files-drill').style.display = 'block';
+  setCrumb(['File Explorer', parent]);
+  $('drill-title').textContent = TAXONOMY[parent]?.icon + ' ' + parent;
+
+  // Render sub-chips
+  renderSubChips(parent);
+
+  // Load all files in this parent
+  await loadDrillFiles(null, parent);
+}
+
+function renderSubChips(parent) {
+  const def = TAXONOMY[parent];
+  const chips = $('sub-chips');
+  if (!def || def.subs.length === 0) { chips.innerHTML = ''; return; }
+
+  chips.innerHTML = `<div class="sub-chip ${_activeSub===null?'active':''}" onclick="drillToSub(null,'${parent}')">
+    All <span class="sub-count">${countForParent(parent)}</span>
+  </div>` + def.subs.map(sub => {
+    const catKey = parent + '/' + sub;
+    const cnt = _explorerCatData[catKey] || 0;
+    return `<div class="sub-chip ${_activeSub===sub?'active':''}" onclick="drillToSub('${sub}','${parent}')">
+      ${sub} <span class="sub-count">${num(cnt)}</span>
+    </div>`;
+  }).join('');
+}
+
+function countForParent(parent) {
+  let t = 0;
+  Object.entries(_explorerCatData).forEach(([cat,n]) => {
+    if (cat===parent || cat.startsWith(parent+'/')) t += n;
+  });
+  return num(t);
+}
+
+async function drillToSub(sub, parent) {
+  _activeSub = sub;
+  renderSubChips(parent);
+  if (sub) {
+    setCrumb(['File Explorer', parent, sub]);
+    await loadDrillFiles(parent+'/'+sub, null);
+  } else {
+    setCrumb(['File Explorer', parent]);
+    await loadDrillFiles(null, parent);
+  }
+}
+
+async function loadDrillFiles(category, parent) {
+  $('file-rows').innerHTML = '<div style="padding:20px;text-align:center"><span class="spin" style="width:16px;height:16px;border-width:2px"></span></div>';
+  try {
+    let url = '/categorised-files?limit=300';
+    if (category) url += '&category=' + encodeURIComponent(category);
+    else if (parent) url += '&parent=' + encodeURIComponent(parent);
+    const files = await api('GET', url);
+    _fileCache = files;
+    renderFileRows(files);
+  } catch(e) { toast('Load error: '+e.message,'err'); }
+}
+
+function sortFileList() {
+  renderFileRows(_fileCache);
+}
+
+function renderFileRows(files) {
+  const sort = $('files-sort')?.value || 'size';
+  const sorted = [...files].sort((a,b) => {
+    if (sort === 'size') return (b.size_bytes||0) - (a.size_bytes||0);
+    if (sort === 'name') return a.filename.localeCompare(b.filename);
+    if (sort === 'date') return (b.modified_at||'').localeCompare(a.modified_at||'');
+    return 0;
+  });
+
+  const totalBytes = sorted.reduce((s,f)=>s+(f.size_bytes||0),0);
+  $('drill-count').textContent = num(sorted.length) + ' files · ' + fmt(totalBytes);
+  $('file-list-label').textContent = num(sorted.length) + ' files';
+  $('file-list-size').textContent  = fmt(totalBytes);
+
+  if (!sorted.length) {
+    $('file-rows').innerHTML = '<div class="empty"><div class="empty-icon">📂</div><div>No files in this category yet.<br>Run the AI Organizer to classify files.</div></div>';
+    return;
+  }
+
+  const EXT_ICONS = {
+    pdf:'PDF', doc:'DOC', docx:'DOC', txt:'TXT', md:'MD', csv:'CSV',
+    xlsx:'XLS', xls:'XLS', pptx:'PPT', ppt:'PPT',
+    py:'PY', js:'JS', ts:'TS', java:'JV', cpp:'C++', go:'GO', rs:'RS',
+    mp4:'MP4', mkv:'MKV', mp3:'MP3', jpg:'JPG', png:'PNG',
+    zip:'ZIP', rar:'RAR', gz:'GZ', '7z':'7Z',
+  };
+
+  $('file-rows').innerHTML = sorted.map(f => {
+    const ext   = (f.extension||'').replace('.','').toLowerCase();
+    const badge = EXT_ICONS[ext] || ext.toUpperCase().slice(0,3) || '—';
+    const col   = catColor(f.ai_category);
+    return `<div class="file-row">
+      <div class="file-ext-badge" style="color:var(--${col==='dim'?'text-dim':col})">${badge}</div>
+      <div style="flex:1;min-width:0">
+        <div class="file-name" title="${f.path}">${f.filename}</div>
+        <div class="file-path">${f.path}</div>
+      </div>
+      <div class="file-meta">
+        <div>${fmt(f.size_bytes)}</div>
+        <div style="margin-top:2px">${(f.modified_at||'').slice(0,10)}</div>
+        ${f.ai_category ? '<div class="tag '+col+'" style="margin-top:3px;font-size:.54rem">'+f.ai_category+'</div>' : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Directories ─────────────────────────────────────────────────────────────
+async function loadDirs() {
+  try {
+    const dirs = await api('GET', '/directories');
+    const ul = $('dir-list');
+    if (!dirs.length) { ul.innerHTML='<li style="color:var(--text-dim);font-size:.73rem;padding:8px 0">No directories added.</li>'; return; }
+    ul.innerHTML = dirs.map(d=>`
+      <li style="display:flex;align-items:flex-start;justify-content:space-between;padding:9px 10px;background:var(--bg3);border-radius:var(--r);margin-bottom:5px">
+        <div style="min-width:0">
+          <div style="color:var(--amber);font-weight:600;font-size:.74rem">${d.alias||d.path.split(/[\\/]/).pop()}</div>
+          <div style="font-size:.63rem;color:var(--text-dim);margin-top:2px;word-break:break-all">${d.path}</div>
+          ${d.last_scanned?`<div style="font-size:.58rem;color:var(--text-faint);margin-top:3px">Scanned ${d.last_scanned.slice(0,16)}</div>`:''}
+        </div>
+        <button class="btn btn-d" onclick="removeDir(${d.id})" style="margin-left:10px;flex-shrink:0">✕</button>
+      </li>`).join('');
+  } catch(e) { toast('Dirs error: '+e.message,'err'); }
+}
+
+async function addDir() {
+  const path=($('dp').value||'').trim(), alias=($('da').value||'').trim();
+  if (!path) return toast('Enter a path','err');
+  try { await api('POST','/select-directory',{path,alias}); toast('Added'); $('dp').value=$('da').value=''; loadDirs(); }
+  catch(e) { toast(e.message,'err'); }
+}
+async function removeDir(id) {
+  try { await api('DELETE','/directories/'+id); toast('Removed'); loadDirs(); }
+  catch(e) { toast(e.message,'err'); }
+}
+async function startScan() {
+  try {
+    setBusy(true);
+    $('scan-spin').style.display='inline-block';
+    const r = await api('POST','/scan',{});
+    toast('Scan queued — '+r.task_ids.length+' dir(s)');
+    setTimeout(()=>go(document.querySelector('[data-page=tasks]')),600);
+  } catch(e) { toast(e.message,'err'); }
+  finally { setBusy(false); $('scan-spin').style.display='none'; }
+}
+
+// ── Storage ─────────────────────────────────────────────────────────────────
+let _extChart = null;
+async function loadStorage() {
+  try {
+    const d = await api('GET','/storage-analysis');
+    const s = d.stats||{};
+    const total = s.total_files||0;
+    $('s-files').textContent    = num(total);
+    $('s-size').textContent     = fmt(s.total_bytes);
+    $('s-avg').textContent      = fmt(s.avg_bytes);
+    $('s-max').textContent      = fmt(s.max_bytes);
+    $('s-max-name').textContent = s.largest_file?.filename||'';
+    $('s-exts').textContent     = num(s.unique_extensions);
+    const h=s.hashed||0, cl=s.categorised||0, em=s.embedded||0;
+    $('s-hashed').textContent       = num(h);
+    $('s-hashed-pct').textContent   = total ? (h/total*100).toFixed(1)+'% hashed':'';
+    $('s-classified').textContent   = num(cl);
+    $('s-classified-pct').textContent = total ? (cl/total*100).toFixed(1)+'% classified':'';
+    $('s-embedded').textContent     = num(em);
+    $('s-embedded-pct').textContent = total ? (em/total*100).toFixed(1)+'% indexed':'';
+    if (s.oldest_file||s.newest_file)
+      $('s-dates').textContent = 'Oldest: '+(s.oldest_file||'').slice(0,10)+'   Newest: '+(s.newest_file||'').slice(0,10);
+    renderDiskBars(d.disks||[]);
+    renderCatBreakdown(d.categories||[]);
+    renderSunburst(d.tree);
+    renderExtChart(d.extensions||[]);
+  } catch(e) { toast('Storage error: '+e.message,'err'); }
+}
+
+function renderDiskBars(disks) {
+  const w=$('disk-bars');
+  w.innerHTML = disks.map(d => {
+    const pct=d.used_pct||0;
+    const col=pct>90?'var(--red)':pct>70?'var(--amber)':'var(--green)';
+    return `<div class="disk-bar-card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-family:var(--head);font-weight:700;font-size:.84rem">${d.mount}</span>
+        <span style="font-size:.68rem;color:var(--text-dim)">
+          <span style="color:${col};font-weight:700">${pct}%</span> used
+          &nbsp;·&nbsp;${fmt(d.used_bytes)} / ${fmt(d.total_bytes)}
+          &nbsp;·&nbsp;<span style="color:var(--green)">${fmt(d.free_bytes)} free</span>
+        </span>
+      </div>
+      <div class="disk-bar-track">
+        <div class="disk-bar-fill" style="width:${pct}%;background:${col}"></div>
+      </div>
+      ${d.fstype?`<span style="font-size:.58rem;color:var(--text-faint)">${d.fstype}${d.device?' · '+d.device:''}</span>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderCatBreakdown(cats) {
+  const el=$('cat-breakdown');
+  if (!cats.length) { el.innerHTML='<div style="color:var(--text-dim);font-size:.7rem">Run AI Organizer first</div>'; return; }
+  const max=cats[0].total_bytes||1;
+  el.innerHTML = cats.slice(0,10).map(c=>{
+    const parent = c.category.split('/')[0];
+    const col = TAXONOMY[parent]?.color || 'var(--text-dim)';
+    return `<div style="margin-bottom:9px">
+      <div style="display:flex;justify-content:space-between;font-size:.68rem;margin-bottom:3px">
+        <span style="color:${col};font-weight:500">${c.category}</span>
+        <span style="color:var(--text-dim)">${num(c.file_count)} · ${fmt(c.total_bytes)}</span>
+      </div>
+      <div class="pb-w">
+        <div class="pb" style="width:${Math.max(1,(c.total_bytes/max*100)).toFixed(1)}%;background:${col}"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderSunburst(tree) {
+  if (!tree) return;
+  const wrap=$('sunburst'); wrap.innerHTML='';
+  const w=wrap.clientWidth||360,h=w,r=w/2;
+  const svg=d3.select(wrap).append('svg').attr('viewBox',`0 0 ${w} ${h}`).attr('width',w).attr('height',h);
+  const g=svg.append('g').attr('transform',`translate(${r},${r})`);
+  const root=d3.hierarchy(tree).sum(d=>d.value||0).sort((a,b)=>b.value-a.value);
+  d3.partition().size([2*Math.PI,r])(root);
+  const COLS=['#f5a623','#3d8ef0','#00e87a','#9d7cf5','#ff3d5a','#f59e0b','#00c9c9','#8b5cf6','#ec4899','#14b8a6'];
+  const arc=d3.arc().startAngle(d=>d.x0).endAngle(d=>d.x1).innerRadius(d=>d.y0).outerRadius(d=>d.y1-1.5);
+  const tip=svg.append('text').attr('x',w/2).attr('text-anchor','middle').attr('y',h-10)
+    .style('font-family','JetBrains Mono,monospace').style('font-size','11px').style('fill','#616880');
+  g.selectAll('path').data(root.descendants().slice(1)).join('path')
+    .attr('d',arc).style('fill',(d,i)=>COLS[i%COLS.length]).style('opacity',d=>1-d.depth*.14)
+    .on('mouseover',function(e,d){d3.select(this).style('opacity',1).style('stroke','#fff').style('stroke-width','.5px');tip.text(d.data.name+'  '+fmt(d.value));})
+    .on('mouseout',function(e,d){d3.select(this).style('opacity',1-d.depth*.14).style('stroke','none');tip.text('');});
+  g.append('text').attr('text-anchor','middle').attr('dy','.35em')
+    .style('font-family','Syne,sans-serif').style('font-weight','800').style('font-size','13px').style('fill','#dde0f0')
+    .text(fmt(root.value));
+}
+
+function renderExtChart(exts) {
+  const top=exts.slice(0,12);
+  const ctx=$('ext-chart').getContext('2d');
+  if (_extChart) _extChart.destroy();
+  const COLS=['#f5a623','#3d8ef0','#00e87a','#9d7cf5','#ff3d5a','#f59e0b','#00c9c9','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1'];
+  _extChart=new Chart(ctx,{type:'bar',
+    data:{labels:top.map(e=>e.extension||'none'),
+      datasets:[{data:top.map(e=>e.total_bytes),borderRadius:4,borderSkipped:false,backgroundColor:COLS.map(c=>c+'cc')}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt(c.raw)},
+        backgroundColor:'#131520',borderColor:'#1a1d2e',borderWidth:1,
+        titleColor:'#dde0f0',bodyColor:'#616880',
+        titleFont:{family:'JetBrains Mono'},bodyFont:{family:'JetBrains Mono'}}},
+      scales:{x:{ticks:{color:'#616880',font:{family:'JetBrains Mono',size:10}},grid:{color:'#1a1d2e'}},
+              y:{ticks:{color:'#616880',font:{family:'JetBrains Mono',size:10},callback:v=>fmt(v)},grid:{color:'#1a1d2e'}}}}});
+}
+
+// ── Duplicates ───────────────────────────────────────────────────────────────
+async function loadDups() {
+  const ms=parseInt($('dms')?.value||'1024');
+  try {
+    const d=await api('GET','/duplicates?min_size='+ms);
+    $('dg').textContent=num(d.summary?.duplicate_groups);
+    $('de').textContent=num(d.summary?.extra_files);
+    $('dw').textContent=fmt(d.summary?.wasted_bytes);
+    const c=$('dup-list');
+    if (!d.groups?.length){c.innerHTML='<div class="empty"><div class="empty-icon">✨</div>No duplicates found. Run Hash Files first.</div>';return;}
+    c.innerHTML=d.groups.map((g,gi)=>`
+      <div class="dg">
+        <div class="dh" onclick="document.getElementById('db-${gi}').classList.toggle('open')">
+          <span><span class="tag red">${g.count} copies</span> &nbsp;
+          <span style="color:var(--text-dim);font-size:.65rem">${g.sha256?.slice(0,12)||''}…</span></span>
+          <span style="color:var(--red);font-size:.68rem">wasted ${fmt(g.wasted_bytes)}</span>
+        </div>
+        <div class="db" id="db-${gi}">
+          ${g.files.map((f,fi)=>`
+            <div class="df">
+              <div style="min-width:0;flex:1">
+                <div style="font-weight:500">${f.filename}</div>
+                <div class="dp">${f.path}</div>
+                <div style="font-size:.59rem;color:var(--text-faint);margin-top:2px">${fmt(f.size_bytes)} · ${(f.modified_at||'').slice(0,10)}</div>
+              </div>
+              ${fi===0?'<span class="tag green">keep</span>':`<button class="btn btn-d" onclick="delFile('${f.path.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">Delete</button>`}
+            </div>`).join('')}
+        </div>
+      </div>`).join('');
+  } catch(e){toast('Dups error: '+e.message,'err');}
+}
+async function delFile(path){
+  if(!confirm('Move to recycle bin?\n'+path))return;
+  try{await api('DELETE','/delete-file',{path});toast('Moved to recycle');loadDups();}
+  catch(e){toast(e.message,'err');}
+}
+async function hashFiles(){
+  try{const r=await api('POST','/hash-files');toast('Hashing queued ('+r.task_id.slice(0,8)+'…)');}
+  catch(e){toast(e.message,'err');}
+}
+
+// ── Large Files ──────────────────────────────────────────────────────────────
+async function loadLF(){
+  const mb=parseFloat($('lf-mb')?.value||'100');
+  const days=parseInt($('lf-days')?.value||'90');
+  try{
+    const d=await api('GET','/large-files?min_mb='+mb+'&unused_days='+days+'&limit=60');
+    const c=$('lf-list');
+    if(!d.files?.length){c.innerHTML='<div class="empty"><div class="empty-icon">✅</div>No files found above '+mb+' MB.</div>';return;}
+    const max=d.files[0].size_bytes||1;
+    c.innerHTML=d.files.map(f=>`
+      <div class="lf">
+        <div class="lft">
+          <span class="lfn">${f.filename}</span>
+          <div style="display:flex;align-items:center;gap:7px">
+            ${f.unused?'<span class="tag red">unused</span>':'<span class="tag green">active</span>'}
+            <span class="lfs">${fmt(f.size_bytes)}</span>
+          </div>
+        </div>
+        <div class="lfp">${f.path}</div>
+        <div style="margin:5px 0"><div class="pb-w"><div class="pb ${f.unused?'red':'blue'}" style="width:${(f.size_bytes/max*100).toFixed(1)}%"></div></div></div>
+        <div class="lfm">
+          <span>${f.extension||'—'}</span>
+          <span>modified: ${(f.modified_at||'').slice(0,10)}</span>
+          <span>accessed: ${(f.accessed_at||'').slice(0,10)}</span>
+          ${f.ai_category?'<span class="tag dim">'+f.ai_category+'</span>':''}
+        </div>
+      </div>`).join('');
+  }catch(e){toast('Large files: '+e.message,'err');}
+}
+
+// ── Organizer ─────────────────────────────────────────────────────────────────
+async function loadOrganizer(){
+  loadCatFiles();
+  bindDryToggle();
+  loadOrgModel();
+  renderTaxonomy();
+  populateOrgFilter();
+}
+
+function renderTaxonomy(){
+  const el=$('org-taxonomy');
+  el.innerHTML=Object.entries(TAXONOMY).map(([parent,def])=>`
+    <div>
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px">
+        <span style="font-size:1rem">${def.icon}</span>
+        <span style="font-family:var(--head);font-weight:700;font-size:.8rem;color:${def.color}">${parent}</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;padding-left:27px">
+        ${def.subs.length > 0
+          ? def.subs.map(s=>`<span class="tag dim" style="font-size:.58rem">${s}</span>`).join('')
+          : '<span style="font-size:.62rem;color:var(--text-faint)">General catch-all</span>'}
+      </div>
+    </div>`).join('');
+}
+
+function populateOrgFilter(){
+  const sel=$('org-filter');
+  sel.innerHTML='<option value="">All</option>';
+  // All full categories
+  Object.entries(TAXONOMY).forEach(([parent,def])=>{
+    const og=document.createElement('optgroup');
+    og.label=parent;
+    if(def.subs.length===0){
+      const o=document.createElement('option');
+      o.value=parent; o.textContent=parent;
+      sel.appendChild(o);
+    } else {
+      def.subs.forEach(sub=>{
+        const o=document.createElement('option');
+        o.value=parent+'/'+sub; o.textContent=parent+' / '+sub;
+        og.appendChild(o);
+      });
+      sel.appendChild(og);
+    }
+  });
+}
+
+async function loadOrgModel(){
+  try{
+    const r=await api('GET','/organize/model');
+    $('org-model-name').textContent = r.available ? r.model : 'not found';
+    $('org-model-name').style.color = r.available ? 'var(--green)' : 'var(--red)';
+    $('org-method').textContent     = r.available ? 'Ollama LLM + rules' : 'Rule-based only';
+    $('org-cat-count').textContent  = r.total_categories || 24;
+  }catch(e){}
+}
+
+function bindDryToggle(){
+  const tog=$('dry-run');
+  if(tog._bound) return; tog._bound=true;
+  tog.addEventListener('change',updateOrgInfo); updateOrgInfo();
+}
+function updateOrgInfo(){
+  const dry=$('dry-run').checked;
+  $('dry-label').textContent = dry ? 'Dry Run — classify only' : 'LIVE MODE — files will move!';
+  $('dry-label').style.color = dry ? 'var(--amber)' : 'var(--red)';
+  $('org-info').innerHTML    = dry
+    ? '<strong>Dry Run ON:</strong> files classified by AI but not moved.'
+    : '<strong style="color:var(--red)">LIVE MODE:</strong> files physically moved into subcategory folders.';
+  $('org-info').style.borderLeftColor = dry ? 'var(--amber)' : 'var(--red)';
+}
+
+async function runOrg(){
+  const dry_run=$('dry-run').checked;
+  const base_dir=($('org-dir').value||'').trim();
+  const force=$('force-reclassify').checked;
+  if(!dry_run&&!base_dir) return toast('Enter base directory for live mode','err');
+  try{
+    setBusy(true);
+    const r=await api('POST','/organize',{dry_run,base_dir,force});
+    toast('Organizer queued — '+(dry_run?'Dry Run':'LIVE')+(force?' (force)':'')+' · '+r.task_id.slice(0,8)+'…');
+    setTimeout(()=>go(document.querySelector('[data-page=tasks]')),500);
+  }catch(e){toast(e.message,'err');}
+  finally{setBusy(false);}
+}
+async function undoOrg(){
+  try{const r=await api('POST','/organize/undo?count=10');toast('Restored '+r.restored+' file(s)');}
+  catch(e){toast(e.message,'err');}
+}
+async function loadCatFiles(){
+  const cat=$('org-filter')?.value||'';
+  const url=cat?'/categorised-files?category='+encodeURIComponent(cat)+'&limit=200':'/categorised-files?limit=200';
+  try{
+    const files=await api('GET',url);
+    const table=$('org-table');
+    if(!files.length){table.innerHTML='<div class="empty"><div class="empty-icon">🤖</div>No classified files. Run Organizer first.</div>';return;}
+    table.innerHTML=`<table>
+      <thead><tr><th>File</th><th>Category</th><th>Size</th><th>Modified</th></tr></thead>
+      <tbody>${files.map(f=>`<tr>
+        <td style="font-weight:500;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.path}">${f.filename}</td>
+        <td><span class="tag ${catColor(f.ai_category)}">${f.ai_category||'—'}</span></td>
+        <td style="color:var(--text-dim)">${fmt(f.size_bytes)}</td>
+        <td style="color:var(--text-faint)">${(f.modified_at||'').slice(0,10)}</td>
+      </tr>`).join('')}</tbody></table>`;
+  }catch(e){toast('Cat files: '+e.message,'err');}
+}
+async function loadMoveLog(){
+  try{
+    const rows=await api('GET','/organize/log?limit=50');
+    const wrap=$('move-log-wrap'), table=$('move-log-table');
+    if(!rows.length){toast('No moves logged');return;}
+    wrap.style.display='block';
+    table.innerHTML=`<table><thead><tr><th>Original</th><th>New Path</th><th>When</th><th>Undone</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr>
+        <td style="font-size:.61rem;color:var(--text-dim);word-break:break-all">${r.original_path}</td>
+        <td style="font-size:.61rem;word-break:break-all">${r.new_path}</td>
+        <td style="white-space:nowrap;font-size:.6rem;color:var(--text-faint)">${(r.moved_at||'').slice(0,16)}</td>
+        <td>${r.undone?'<span class="tag green">yes</span>':'<span class="tag dim">no</span>'}</td>
+      </tr>`).join('')}</tbody></table>`;
+  }catch(e){toast(e.message,'err');}
+}
+
+// ── Semantic Search ───────────────────────────────────────────────────────────
+async function loadSearchStatus(){
+  const body=$('search-status-body');
+  try{
+    const s=await api('GET','/search-status');
+    if(s.embed_model) $('sq-model-name').textContent=s.embed_model;
+    const ok=v=>'<span style="color:var(--green)">'+v+'</span>';
+    const bad=v=>'<span style="color:var(--red)">'+v+'</span>';
+    const warn=v=>'<span style="color:var(--amber)">'+v+'</span>';
+    body.innerHTML=
+      '<span style="color:var(--text-dim)">FAISS</span>'        +(s.faiss_installed?ok('installed'):bad('MISSING'))+
+      '<span style="color:var(--text-dim)">Ollama</span>'       +(s.ollama_running?ok('running'):bad('offline'))+
+      '<span style="color:var(--text-dim)">Embed model</span>'  +(s.embed_model_available?ok(s.embed_model):bad('none'))+
+      '<span style="color:var(--text-dim)">Vectors</span>'      +(s.index_vectors>0?ok(s.index_vectors.toLocaleString()):warn('0 — build index'))+
+      '<span style="color:var(--text-dim)">Doc files</span>'    +(s.db_doc_files>0?ok(s.db_doc_files.toLocaleString()):warn('0'))+
+      '<span style="color:var(--text-dim)">With text</span>'    +(s.db_with_text>0?ok(s.db_with_text.toLocaleString()):warn('0'));
+    if(s.issues&&s.issues.length){
+      body.innerHTML+='<div style="grid-column:1/-1;margin-top:6px;padding:7px;background:rgba(255,61,90,.07);border-radius:4px;border-left:2px solid var(--red)">'
+        +s.issues.map(i=>'<div style="color:var(--text-dim);margin-bottom:2px">• '+i+'</div>').join('')+'</div>';
+    }
+  }catch(e){body.innerHTML='<span style="color:var(--red);grid-column:1/-1">Status error: '+e.message+'</span>';}
+}
+
+async function runSearch(){
+  const q=($('sq').value||'').trim();
+  if(!q)return;
+  const c=$('search-res');
+  c.innerHTML='<div style="text-align:center;padding:32px"><span class="spin" style="width:20px;height:20px;border-width:2px"></span><div style="margin-top:10px;font-size:.68rem;color:var(--text-dim)">Embedding query…</div></div>';
+  try{
+    const r=await api('GET','/semantic-search?q='+encodeURIComponent(q)+'&top_k=12');
+    if(!r.results||!r.results.length){
+      c.innerHTML='<div class="empty"><div class="empty-icon">🔍</div><div>No documents found</div>'
+        +'<div style="font-size:.66rem;color:var(--text-faint);margin-top:6px">Build Doc Index first, then try again.</div></div>';
+      return;
+    }
+    const ICONS={pdf:'📄',doc:'📝',docx:'📝',txt:'📃',md:'📃',csv:'📊',xlsx:'📊',xls:'📊',
+      pptx:'📋',ppt:'📋',py:'🐍',js:'⚡',ts:'⚡',java:'☕',go:'🐹',rs:'🦀',
+      sh:'💻',html:'🌐',sql:'🗃',json:'🗃',ipynb:'🔬'};
+    c.innerHTML='<div style="font-size:.66rem;color:var(--text-dim);margin-bottom:10px">'
+      +'<strong style="color:var(--text)">'+r.results.length+' documents</strong>'
+      +' for &ldquo;<span style="color:var(--amber)">'+q+'</span>&rdquo;'
+      +' &nbsp;<span style="color:var(--text-faint)">cosine similarity</span></div>'
+      +r.results.map(function(f){
+        const ext=(f.extension||'').replace('.','').toLowerCase();
+        const score=typeof f.score==='number'?f.score:0;
+        const col=score>=0.75?'var(--green)':score>=0.5?'var(--amber)':'var(--text-dim)';
+        const barCol=score>=0.75?'#00e87a':score>=0.5?'#f5a623':'#616880';
+        const sem=f.semantic_score,kw=f.keyword_score;
+        return '<div class="ri">'
+          +'<div class="ric">'+(ICONS[ext]||'📄')+'</div>'
+          +'<div style="flex:1;min-width:0">'
+          +'<div class="rn">'+f.filename+'</div>'
+          +'<div class="rp">'+f.path+'</div>'
+          +'<div style="display:flex;gap:5px;margin-top:5px;align-items:center;flex-wrap:wrap">'
+          +(f.ai_category?'<span class="tag '+catColor(f.ai_category)+'">'+f.ai_category+'</span>':'')
+          +'<span class="tag dim">'+fmt(f.size_bytes)+'</span>'
+          +(f.extension?'<span class="tag dim">'+f.extension+'</span>':'')
+          +(f.modified_at?'<span style="font-size:.58rem;color:var(--text-faint)">'+f.modified_at.slice(0,10)+'</span>':'')
+          +(sem!==undefined?'<span style="font-size:.56rem;color:var(--text-faint)">s:'+Math.round(sem*100)+'% k:'+Math.round((kw||0)*100)+'%</span>':'')
+          +'</div>'
+          +'<div class="sbar-w"><div class="sbar" style="width:'+Math.round(score*100)+'%;background:'+barCol+'"></div></div>'
+          +'</div>'
+          +'<div style="text-align:right;padding-left:10px;flex-shrink:0;min-width:40px">'
+          +'<div style="font-size:.9rem;font-weight:800;color:'+col+'">'+Math.round(score*100)+'%</div>'
+          +'<div style="font-size:.56rem;color:var(--text-faint)">match</div>'
+          +'</div></div>';
+      }).join('');
+  }catch(e){c.innerHTML='<div class="empty" style="color:var(--red)">Search failed: '+e.message+'</div>';}
+}
+
+async function buildDocIdx(force){
+  try{
+    setBusy(true);
+    const r=await api('POST','/build-index?force='+(force?'true':'false'));
+    toast((force?'Force rebuild':'Doc index build')+' queued — '+r.task_id.slice(0,8)+'…');
+    setTimeout(()=>go(document.querySelector('[data-page=tasks]')),500);
+  }catch(e){toast(e.message,'err');}
+  finally{setBusy(false);}
+}
+function buildIdx(f){buildDocIdx(f);}
+
+// ── Tasks ─────────────────────────────────────────────────────────────────────
+async function loadTasks(){
+  try{
+    const tasks=await api('GET','/tasks?limit=10');   // capped at 10
+    renderFeed(tasks,'task-feed',9999);
+    const cnt={done:0,running:0,queued:0,failed:0,cancelled:0};
+    tasks.forEach(t=>{ if(cnt[t.status]!==undefined) cnt[t.status]++; });
+    $('ts-d').textContent=cnt.done;
+    $('ts-r').textContent=cnt.running;
+    $('ts-q').textContent=cnt.queued;
+    $('ts-f').textContent=cnt.failed;
+    $('ts-c').textContent=cnt.cancelled;
+    // Update sidebar badge (running+queued)
+    $('nav-tasks-count').textContent=cnt.running+cnt.queued;
+  }catch(e){toast('Tasks: '+e.message,'err');}
+}
+
+function renderFeed(tasks, elId, maxH){
+  const c=$(elId);
+  c.style.maxHeight=maxH+'px';
+  if(!tasks.length){c.innerHTML='<div class="empty">No tasks yet.</div>';return;}
+  c.innerHTML=tasks.map(t=>`
+    <div class="ti">
+      <div class="td ${t.status}"></div>
+      <div style="width:80px;font-weight:600;font-size:.7rem">${t.task_type}</div>
+      <div style="flex:0 0 80px">
+        <div class="pb-w"><div class="pb ${t.status==='done'?'green':t.status==='failed'||t.status==='cancelled'?'red':''}" style="width:${(t.progress||0)*100}%"></div></div>
+        <div style="font-size:.57rem;color:var(--text-faint);margin-top:2px">${((t.progress||0)*100).toFixed(0)}%</div>
+      </div>
+      <div style="flex:1;color:var(--text-dim);font-size:.67rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 8px">${t.message||t.status}</div>
+      <div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
+        <span class="tag ${t.status==='done'?'green':t.status==='running'?'amber':t.status==='failed'?'red':t.status==='cancelled'?'orange':'dim'}">${t.status}</span>
+        <span style="font-size:.58rem;color:var(--text-faint)">${(t.updated_at||'').slice(11,16)}</span>
+        ${(t.status==='running'||t.status==='queued')
+          ?`<button class="btn-cancel" onclick="cancelTask('${t.id}')">✕</button>`:''}
+      </div>
+    </div>`).join('');
+}
+
+async function cancelTask(id){
+  try{ await api('POST','/tasks/'+id+'/cancel'); toast('Task cancelled'); loadTasks(); }
+  catch(e){ toast(e.message,'err'); }
+}
+
+async function clearDoneTasks(){
+  // Locally just refresh — DB will show last 10
+  await loadTasks();
+  toast('Refreshed (showing last 10 tasks)');
+}
+
+// ── Auto-refresh ──────────────────────────────────────────────────────────────
+setInterval(async()=>{
+  try{
+    const tasks=await api('GET','/tasks?limit=5');
+    if(curPage==='overview') renderFeed(tasks,'mini-feed',260);
+    if(curPage==='tasks')    loadTasks();
+    // Update badge
+    const active=tasks.filter(t=>t.status==='running'||t.status==='queued').length;
+    $('nav-tasks-count').textContent=active;
+  }catch(e){}
+},3000);
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async ()=>{
+  console.log('🚀 SMARTMEM booting...');
+  
+  // Show initial loading state
+  $('ollama-label').textContent = 'Checking…';
+  $('ollama-dot').className = 'sdot off';
+  
+  try {
+    // Check Ollama first (immediately visible)
+    await checkOllama();
+  } catch(e) {
+    console.error('Ollama check failed:', e);
+  }
+  
+  try {
+    // Load system metrics
+    await loadSystemMetrics();
+  } catch(e) {
+    console.error('System metrics failed:', e);
+  }
+  
+  try {
+    // Load overview data
+    await loadOverview();
+  } catch(e) {
+    console.error('Overview load failed:', e);
+  }
+  
+  console.log('✓ SMARTMEM ready');
+  
+  // Set up periodic refreshes
+  setInterval(() => checkOllama(), 15000);     // Check Ollama every 15s
+  setInterval(() => loadSystemMetrics(), 10000); // Update metrics every 10s
+  setInterval(() => {
+    // Auto-refresh page data if on overview
+    if(curPage === 'overview') {
+      loadOverview().catch(e => console.error('Auto-refresh failed:', e));
+    }
+  }, 30000); // Refresh overview every 30s
+});
+</script>
+</body>
+</html>
