@@ -32,13 +32,12 @@ def resolve_safe(raw: str) -> pathlib.Path:
     """
     try:
         p = pathlib.Path(raw).expanduser()
-        
-        # CRITICAL FIX: Check for symlinks BEFORE resolving
-        # (resolve() would follow the symlink)
-        if p.is_symlink():
-            raise HTTPException(400, "Symlinks not allowed")
-        
-        p = p.resolve()
+        if not p.is_absolute():
+            p = pathlib.Path.cwd() / p
+        # Check each existing component before resolve(). Checking only the
+        # leaf misses paths such as trusted/link-to-outside/file.txt.
+        _reject_linked_components(p)
+        p = p.resolve(strict=False)
     except HTTPException:
         raise
     except Exception as exc:
@@ -52,6 +51,18 @@ def resolve_safe(raw: str) -> pathlib.Path:
         raise HTTPException(400, "Null/control bytes in path")
 
     return p
+
+
+def _reject_linked_components(path: pathlib.Path) -> None:
+    """Reject symlink/junction components before canonicalizing a user path."""
+    current = pathlib.Path(path.anchor)
+    for part in path.parts[1:]:
+        current = current / part
+        try:
+            if current.is_symlink() or (hasattr(current, "is_junction") and current.is_junction()):
+                raise HTTPException(400, "Symlinks and junctions are not allowed")
+        except OSError as exc:
+            raise HTTPException(400, "Cannot safely inspect path") from exc
 
 
 async def assert_under_allowed(
@@ -101,9 +112,13 @@ def safe_delete(file_path: pathlib.Path) -> pathlib.Path:
         logger.warning("Refusing to delete symlink: %s", file_path)
         raise HTTPException(400, "Cannot delete symlinks")
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest_name = f"{timestamp}__{file_path.name}"
-    dest = RECYCLE_BIN / dest_name
+    file_path = pathlib.Path(resolve_safe(str(file_path)))
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    dest = RECYCLE_BIN / f"{timestamp}__{file_path.name}"
+    suffix = 1
+    while dest.exists():
+        dest = RECYCLE_BIN / f"{timestamp}_{suffix}__{file_path.name}"
+        suffix += 1
 
     shutil.move(str(file_path), str(dest))
     logger.info("🗑  Moved %s → %s", file_path, dest)

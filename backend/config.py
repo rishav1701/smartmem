@@ -11,7 +11,7 @@ DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Database ──────────────────────────────────────────────────────────────────
-DB_PATH = pathlib.Path(os.getenv("SMARTMEM_DB_PATH", str(DATA_DIR / "smartmem.db")))
+DB_PATH = pathlib.Path(os.getenv("SMARTMEM_DB_PATH", str(DATA_DIR / "smartmem.db"))).expanduser()
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # ── External services ─────────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "60"))  # seconds
 RECYCLE_BIN = pathlib.Path(os.getenv(
     "SMARTMEM_RECYCLE_BIN",
     str(pathlib.Path.home() / ".smartmem_recycle")
-))
+)).expanduser()
 RECYCLE_BIN.mkdir(parents=True, exist_ok=True)
 
 # ── FAISS indexing ────────────────────────────────────────────────────────────

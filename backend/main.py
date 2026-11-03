@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from database.db import init_db
-from workers.task_queue import start_worker
+from workers.task_queue import start_worker, recover_interrupted_tasks
 from config import LOG_LEVEL, ALLOW_ALL_ORIGINS, ALLOWED_ORIGINS, DATA_DIR
 from routers import (
     directories, scan, storage, duplicates,
@@ -24,18 +24,22 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s"
 )
 logger = logging.getLogger("smartmem")
+APP_VERSION = "0.3.0"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("SMARTMEM starting up ...")
+    logger.info("Memora starting up ...")
     await init_db()
+    recovered = await recover_interrupted_tasks()
+    if recovered:
+        logger.warning("Marked %d interrupted task(s) failed; they can be retried", recovered)
     start_worker(num_workers=2)
     logger.info("Background workers started")
     yield
-    logger.info("SMARTMEM shutting down ...")
+    logger.info("Memora shutting down ...")
     # Cleanup Ollama connections
     from services.organizer import ai_organizer
     from services.search import semantic_search
@@ -45,9 +49,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="SMARTMEM - Personal AI Memory Assistant",
-    version="2.0.0",
-    description="Privacy-first local AI storage optimization system",
+    title="Memora - Local AI Memory",
+    version=APP_VERSION,
+    description="Local-first file intelligence and semantic search",
     lifespan=lifespan,
 )
 
@@ -128,7 +132,7 @@ async def system_metrics():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "2.0.0"}
+    return {"status": "ok", "version": APP_VERSION}
 
 
 # Serve frontend

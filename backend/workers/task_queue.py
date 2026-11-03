@@ -53,6 +53,18 @@ async def create_task(task_type: str, payload: dict = None) -> str:
     return task_id
 
 
+async def recover_interrupted_tasks() -> int:
+    """Mark work lost with the process as failed and available for explicit retry."""
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        cur = await db.execute(
+            "UPDATE tasks SET status='failed', "
+            "message='Interrupted by application restart; retry when ready', "
+            "updated_at=datetime('now') WHERE status IN ('queued', 'running')"
+        )
+        await db.commit()
+        return cur.rowcount
+
+
 async def update_task(task_id: str, status: str, progress: float = None, message: str = None):
     async with aiosqlite.connect(str(DB_PATH)) as db:
         fields = ["status=?", "updated_at=datetime('now')"]
@@ -68,15 +80,14 @@ async def update_task(task_id: str, status: str, progress: float = None, message
 
 async def cancel_task(task_id: str) -> bool:
     """Mark a queued/running task as cancelled. Returns True if it was cancellable."""
-    async with _cancelled_lock:
-        _cancelled[task_id] = datetime.now()
-    
     async with aiosqlite.connect(str(DB_PATH)) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT status FROM tasks WHERE id=?", (task_id,)) as cur:
             row = await cur.fetchone()
         if not row or row["status"] in ("done", "failed", "cancelled"):
             return False
+        async with _cancelled_lock:
+            _cancelled[task_id] = datetime.now()
         await db.execute(
             "UPDATE tasks SET status='cancelled', updated_at=datetime('now'), "
             "message='Cancelled by user' WHERE id=?", (task_id,)
@@ -126,7 +137,11 @@ async def _worker():
         try:
             await coro_fn(task_id, *args, **kwargs)
             if not is_cancelled(task_id):
-                await update_task(task_id, "done", progress=1.0)
+                # Task handlers may have set a terminal state (for example,
+                # missing Ollama marks indexing failed). Never overwrite it.
+                task = await get_task(task_id)
+                if task and task["status"] == "running":
+                    await update_task(task_id, "done", progress=1.0)
             logger.info("Task %s complete", task_id)
         except asyncio.CancelledError:
             logger.info("Task %s was cancelled during execution", task_id)

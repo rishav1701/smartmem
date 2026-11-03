@@ -1,3 +1,12 @@
 backend/data/smartmem.db
 backend/data/smartmem.db-shm
 backend/data/smartmem.db-wal
+backend/.venv/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.env
+.env.*
+!.env.example
+*.log
