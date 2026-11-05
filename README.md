@@ -41,9 +41,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for current boundaries and the target dir
 - Python 3.11+, FastAPI, Pydantic, aiosqlite
 - SQLite and FAISS CPU
 - Ollama for local model inference (optional for basic file workflows)
-- Vanilla JavaScript, HTML, CSS, Chart.js, and D3 for the current frontend
+- Vanilla JavaScript, HTML, CSS, and browser-native SVG/canvas rendering
 
-The UI currently loads fonts and chart libraries from third-party CDNs. This conflicts with a strict offline/privacy claim; do not describe the present app as fully offline until these assets are bundled or removed.
+The UI does not fetch fonts or chart libraries from third-party CDNs. The browser UI is local; AI features still depend on the configured Ollama service, and optional document extraction depends on locally installed libraries.
 
 ## Development setup
 
@@ -68,7 +68,7 @@ ollama pull llama3.2
 ollama pull nomic-embed-text
 ```
 
-Ollama defaults to `http://127.0.0.1:11434`. Basic metadata scanning, hashes, and storage analysis do not require it. The current settings are environment variables in `backend/config.py`; there is not yet an `.env` loader or user-facing settings page.
+Ollama defaults to `http://127.0.0.1:11434`. On backend startup, Memora checks the local API and attempts to start the installed Ollama server in the background if it is unavailable. This check runs asynchronously so it does not delay the UI or basic file workflows. Auto-start only applies to a loopback HTTP endpoint; remote/custom hosts are never launched. Set `OLLAMA_AUTOSTART=false` to disable this behavior, or enable Ollama in Windows Task Manager → Startup apps if you prefer Ollama to start at login. Basic metadata scanning, hashes, and storage analysis do not require it. Settings are read from environment variables in `backend/config.py`; `.env` loading and a user-facing settings page are not implemented.
 
 ## Configuration
 
@@ -81,7 +81,6 @@ Ollama defaults to `http://127.0.0.1:11434`. Basic metadata scanning, hashes, an
 | `MEMORA_DOCUMENT_MAX_CHARS` | `100000` | Maximum extracted characters cached per file (bounded to 2,000,000) |
 | `MEMORA_CHUNK_SIZE` | `1200` | Passage size in characters (bounded to 8,000) |
 | `MEMORA_CHUNK_OVERLAP` | `160` | Overlap between passages |
-| `ALLOW_ALL_ORIGINS` | `false` | Enable wildcard CORS (avoid for local deployment) |
 | `ALLOWED_ORIGINS` | localhost list | CORS origin allowlist |
 | `LOG_LEVEL` | `INFO` | Python logging level |
 
@@ -101,7 +100,7 @@ FastAPI's generated OpenAPI UI at `/docs` is the current authoritative API refer
 
 ## Privacy and security
 
-Read [SECURITY.md](SECURITY.md). The app stores paths, file metadata, optional extracted text, hashes, task state, categorization, and derived vectors locally. AI requests are intended for the local Ollama endpoint. Current CDN dependencies mean the frontend can contact external hosts for static assets. Data is not encrypted by the app. Selected-root checks are not authentication; bind to loopback.
+Read [SECURITY.md](SECURITY.md). The app stores paths, file metadata, optional extracted text, hashes, task state, categorization, and derived vectors locally. AI requests use the configured Ollama endpoint. Static UI assets do not call third-party hosts. Data is not encrypted by the app. The API now rejects non-loopback clients and unexpected Host headers; selected-root checks still are not authentication.
 
 ## Quality and contribution
 

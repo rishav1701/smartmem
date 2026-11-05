@@ -11,7 +11,7 @@ Full taxonomy (6 main → 24 sub-categories):
   Archives   → Backups, Compressed, Installers
   Others     → (anything that doesn't fit)
 """
-import asyncio, json, logging, pathlib, re, shutil
+import asyncio, json, logging, os, pathlib, re, shutil, uuid
 import aiosqlite, httpx
 from database.db import DB_PATH
 from config import OLLAMA_BASE, OLLAMA_TIMEOUT
@@ -415,10 +415,11 @@ async def categorize_files(task_id: str, dry_run: bool = True,
     await update_task(task_id, "running", 0.0, f"Starting — {total} files")
 
     done_count = 0
+    failed_moves = 0
     BATCH = 20
 
     async def process_one(row) -> None:
-        nonlocal done_count
+        nonlocal done_count, failed_moves
         if is_cancelled(task_id):
             return
         try:
@@ -433,12 +434,18 @@ async def categorize_files(task_id: str, dry_run: bool = True,
         snippet  = await asyncio.to_thread(_read_snippet, str(source_path))
         async with _SEM:
             category = await _ask_ollama(row["filename"], snippet)
-        async with aiosqlite.connect(str(DB_PATH)) as db:
-            await db.execute("UPDATE files_metadata SET ai_category=? WHERE id=?",
-                             (category, row["id"]))
-            await db.commit()
         if not dry_run and base_dir:
-            await _move_file_async(str(source_path), category, base_dir.strip())
+            moved = await _move_file_async(
+                str(source_path), category, base_dir.strip(), row["id"]
+            )
+            if not moved:
+                failed_moves += 1
+                return
+        else:
+            async with aiosqlite.connect(str(DB_PATH)) as db:
+                await db.execute("UPDATE files_metadata SET ai_category=? WHERE id=?",
+                                 (category, row["id"]))
+                await db.commit()
         done_count += 1
         if done_count % BATCH == 0 or done_count == total:
             await update_task(task_id, "running", done_count / total,
@@ -453,13 +460,67 @@ async def categorize_files(task_id: str, dry_run: bool = True,
         await asyncio.sleep(0)
 
     if not is_cancelled(task_id):
-        await update_task(task_id, "done", 1.0, f"Done — {done_count}/{total} classified")
+        if failed_moves:
+            await update_task(
+                task_id, "failed", done_count / total,
+                f"Partial result — {done_count}/{total} classified; "
+                f"{failed_moves} live move(s) failed and can be retried",
+            )
+        else:
+            await update_task(task_id, "done", 1.0, f"Done — {done_count}/{total} classified")
 
 
 def _do_move(src: str, dest: str):
     shutil.move(src, dest)
 
-async def _move_file_async(src: str, category: str, base_dir: str):
+
+def _reserve_destination(dest_dir: pathlib.Path, filename: str) -> tuple[pathlib.Path, tuple[int, int]]:
+    """Atomically reserve a unique filename so concurrent jobs cannot overwrite."""
+    source = pathlib.Path(filename)
+    for counter in range(10000):
+        name = filename if counter == 0 else f"{source.stem}_{counter}{source.suffix}"
+        candidate = dest_dir / name
+        try:
+            fd = os.open(str(candidate), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            continue
+        try:
+            st = os.fstat(fd)
+            return candidate, (st.st_dev, st.st_ino)
+        finally:
+            os.close(fd)
+    raise FileExistsError("Could not allocate a unique destination filename")
+
+
+def _reserve_exact_destination(destination: pathlib.Path) -> tuple[int, int]:
+    fd = os.open(str(destination), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    try:
+        st = os.fstat(fd)
+        return st.st_dev, st.st_ino
+    finally:
+        os.close(fd)
+
+
+def _move_into_reservation(src: pathlib.Path, dest: pathlib.Path,
+                           reservation: tuple[int, int]) -> None:
+    """Move into a file this operation exclusively created."""
+    st = dest.lstat()
+    if (st.st_dev, st.st_ino) != reservation:
+        raise FileExistsError(f"Reserved destination changed: {dest}")
+    try:
+        shutil.move(str(src), str(dest))
+    except Exception:
+        try:
+            st = dest.lstat()
+            if (st.st_dev, st.st_ino) == reservation:
+                dest.unlink()
+        except OSError:
+            pass
+        raise
+
+
+async def _move_file_async(src: str, category: str, base_dir: str,
+                           file_id: int | None = None) -> bool:
     """
     Move file to categorized destination.
     FIX: Make file move and DB update atomic to prevent inconsistency.
@@ -478,7 +539,7 @@ async def _move_file_async(src: str, category: str, base_dir: str):
         return False
     if not src_path.is_file():
         logger.warning("Source file does not exist: %s", src)
-        return
+        return False
     
     # category may have subdirs e.g. "Academics/Lectures"
     dest_dir = dest_root
@@ -496,65 +557,75 @@ async def _move_file_async(src: str, category: str, base_dir: str):
         dest_dir.mkdir(parents=True, exist_ok=True)
     except Exception as exc:
         logger.error("Cannot create destination dir %s: %s", dest_dir, exc)
-        return
-    
-    dest = dest_dir / src_path.name
-    counter = 1
-    while dest.exists():
-        dest = dest_dir / f"{src_path.stem}_{counter}{src_path.suffix}"
-        counter += 1
-    
-    # FIX: Use a temporary marker file to ensure atomic move + DB update
-    # If process crashes between move and DB update, we can detect and reconcile
-    marker_file = dest.parent / f".{dest.name}.move_in_progress"
-    
+        return False
+
+    dest = None
+    reservation = None
+    marker_file = None
+    moved_into_dest = False
     try:
-        # Create marker BEFORE move
-        marker_file.write_text(str(src_path))
-        
-        # Move file
-        await asyncio.to_thread(_do_move, str(src_path), str(dest))
-        
-        # NOW update DB (inside single transaction)
+        dest, reservation = await asyncio.to_thread(
+            _reserve_destination, dest_dir, src_path.name
+        )
+        marker_file = dest.parent / f".memora-{uuid.uuid4().hex}.move_in_progress"
+        with marker_file.open("x", encoding="utf-8") as marker:
+            marker.write(json.dumps({"source": str(src_path), "destination": str(dest)}))
+        await asyncio.to_thread(_move_into_reservation, src_path, dest, reservation)
+        moved_into_dest = True
+
         async with aiosqlite.connect(str(DB_PATH)) as db:
-            # Use transaction to combine both operations
             await db.execute("BEGIN IMMEDIATE")
             try:
                 await db.execute(
                     "INSERT INTO organizer_log(original_path, new_path) VALUES (?,?)",
                     (str(src_path), str(dest))
                 )
-                await db.execute(
-                    "UPDATE files_metadata SET path=? WHERE path=?",
-                    (str(dest), str(src_path))
-                )
+                if file_id is None:
+                    cursor = await db.execute(
+                        "UPDATE files_metadata SET path=?, ai_category=? WHERE path=?",
+                        (str(dest), category, str(src_path)),
+                    )
+                else:
+                    cursor = await db.execute(
+                        "UPDATE files_metadata SET path=?, ai_category=? WHERE id=?",
+                        (str(dest), category, file_id),
+                    )
+                if cursor.rowcount != 1:
+                    raise RuntimeError("File metadata changed while the file was being moved")
                 await db.commit()
                 logger.info("✓ Moved %s → %s", src_path, dest)
             except Exception as exc:
                 await db.execute("ROLLBACK")
                 logger.error("DB update failed, rolling back: %s", exc)
-                # Try to move file back
+                # Restore only if the original pathname is still free.
                 try:
-                    await asyncio.to_thread(_do_move, str(dest), str(src_path))
+                    rollback_reservation = await asyncio.to_thread(
+                        _reserve_exact_destination, src_path
+                    )
+                    await asyncio.to_thread(
+                        _move_into_reservation, dest, src_path, rollback_reservation
+                    )
                     logger.warning("Rolled back file move")
-                except:
+                except Exception:
                     logger.error("CRITICAL: Could not roll back file move! %s still at %s", src, dest)
                 raise
-        
-        # Delete marker file on success
-        try:
-            marker_file.unlink()
-        except:
-            pass
-            
+        return True
     except Exception as exc:
         logger.error("Move failed for %s: %s", src, exc)
-        # Clean up marker file
-        try:
-            marker_file.unlink()
-        except:
-            pass
-        return
+        if not moved_into_dest and dest is not None and reservation is not None:
+            try:
+                st = dest.lstat()
+                if (st.st_dev, st.st_ino) == reservation:
+                    dest.unlink()
+            except OSError:
+                pass
+        return False
+    finally:
+        if marker_file is not None:
+            try:
+                marker_file.unlink()
+            except OSError:
+                pass
 
 
 async def undo_last_moves(count: int = 10) -> list[dict]:
@@ -578,12 +649,23 @@ async def undo_last_moves(count: int = 10) -> list[dict]:
                                 "error": "A file already exists at the original path"})
                 continue
             original.parent.mkdir(parents=True, exist_ok=True)
-            await asyncio.to_thread(_do_move, str(moved), str(original))
-            async with aiosqlite.connect(str(DB_PATH)) as db:
-                await db.execute("UPDATE organizer_log SET undone=1 WHERE id=?", (m["id"],))
-                await db.execute("UPDATE files_metadata SET path=? WHERE path=?",
-                                 (str(original), str(moved)))
-                await db.commit()
+            reservation = await asyncio.to_thread(_reserve_exact_destination, original)
+            await asyncio.to_thread(_move_into_reservation, moved, original, reservation)
+            try:
+                async with aiosqlite.connect(str(DB_PATH)) as db:
+                    await db.execute("BEGIN IMMEDIATE")
+                    await db.execute("UPDATE organizer_log SET undone=1 WHERE id=?", (m["id"],))
+                    await db.execute("UPDATE files_metadata SET path=? WHERE path=?",
+                                     (str(original), str(moved)))
+                    await db.commit()
+            except Exception:
+                rollback_reservation = await asyncio.to_thread(
+                    _reserve_exact_destination, moved
+                )
+                await asyncio.to_thread(
+                    _move_into_reservation, original, moved, rollback_reservation
+                )
+                raise
             results.append({"status":"ok","restored":m["original_path"]})
         except Exception as exc:
             results.append({"status":"error","path":m["new_path"],"error":str(exc)})

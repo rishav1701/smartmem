@@ -38,12 +38,14 @@ TASK_CANCELLED_RETENTION_DAYS = int(os.getenv("TASK_CANCELLED_RETENTION_DAYS", "
 TASK_CLEANUP_INTERVAL_HOURS = int(os.getenv("TASK_CLEANUP_INTERVAL_HOURS", "1"))
 
 # ── Security ──────────────────────────────────────────────────────────────────
-ALLOW_ALL_ORIGINS = os.getenv("ALLOW_ALL_ORIGINS", "false").lower() == "true"
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:8000").split(",")
+ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv(
+    "ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:8000"
+).split(",") if origin.strip()]
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # ── Feature flags ─────────────────────────────────────────────────────────────
 ENABLE_OLLAMA = os.getenv("ENABLE_OLLAMA", "true").lower() == "true"
+OLLAMA_AUTOSTART = os.getenv("OLLAMA_AUTOSTART", "true").lower() == "true"
 ENABLE_FAISS = os.getenv("ENABLE_FAISS", "true").lower() == "true"

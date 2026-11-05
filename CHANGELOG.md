@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Prevent live organizer destination collisions with exclusive reservations and report failed moves accurately.
+- Stop deserializing legacy FAISS pickle maps; preserve old artifacts while rebuilding with JSON maps.
+- Upgrade FastAPI, Starlette, pypdf, python-multipart, Pydantic, and HTTPX to patched releases; add dependency auditing and Dependabot updates.
+- Add regression coverage for organizer collisions, legacy index loading, and local request security.
+
 Changes are recorded here as the project moves toward its first public release.
 
 ## Unreleased

@@ -4,10 +4,6 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>Memora — Local AI Memory</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <style>
 :root{
   --bg:#08090c;--bg2:#0d0f15;--bg3:#131520;--bg4:#191c27;
@@ -15,7 +11,7 @@
   --amber:#f5a623;--green:#00e87a;--red:#ff3d5a;
   --blue:#3d8ef0;--purple:#9d7cf5;--teal:#00c9c9;--orange:#ff7440;
   --text:#dde0f0;--text-dim:#616880;--text-faint:#2e3248;
-  --mono:'JetBrains Mono',monospace;--head:'Syne',sans-serif;
+  --mono:ui-monospace,'Cascadia Code','Segoe UI Mono',monospace;--head:system-ui,-apple-system,'Segoe UI',sans-serif;
   --r:8px;--r2:14px;--t:140ms ease;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -825,7 +821,7 @@ select.inp{cursor:pointer}
       <div style="font-size:.72rem;line-height:1.8;color:var(--text-dim)">
         File metadata, extracted text, task state, and search vectors are stored in the local application data directory shown above.
         Model requests use the configured Ollama endpoint. Basic scanning and storage views do not require Ollama.
-        The current page loads fonts and chart libraries from external CDNs; these hosts are listed above, so the UI is not fully offline yet.
+        The interface uses browser-native rendering and makes no third-party static asset requests. AI features connect to the configured local Ollama service.
         The database and index are not encrypted by Memora. Keep this API bound to your own computer.
       </div>
     </div>
@@ -1381,41 +1377,93 @@ function renderCatBreakdown(cats) {
 }
 
 function renderSunburst(tree) {
-  if (!tree) return;
-  const wrap=$('sunburst'); wrap.innerHTML='';
-  const w=wrap.clientWidth||360,h=w,r=w/2;
-  const svg=d3.select(wrap).append('svg').attr('viewBox',`0 0 ${w} ${h}`).attr('width',w).attr('height',h);
-  const g=svg.append('g').attr('transform',`translate(${r},${r})`);
-  const root=d3.hierarchy(tree).sum(d=>d.value||0).sort((a,b)=>b.value-a.value);
-  d3.partition().size([2*Math.PI,r])(root);
-  const COLS=['#f5a623','#3d8ef0','#00e87a','#9d7cf5','#ff3d5a','#f59e0b','#00c9c9','#8b5cf6','#ec4899','#14b8a6'];
-  const arc=d3.arc().startAngle(d=>d.x0).endAngle(d=>d.x1).innerRadius(d=>d.y0).outerRadius(d=>d.y1-1.5);
-  const tip=svg.append('text').attr('x',w/2).attr('text-anchor','middle').attr('y',h-10)
-    .style('font-family','JetBrains Mono,monospace').style('font-size','11px').style('fill','#616880');
-  g.selectAll('path').data(root.descendants().slice(1)).join('path')
-    .attr('d',arc).style('fill',(d,i)=>COLS[i%COLS.length]).style('opacity',d=>1-d.depth*.14)
-    .on('mouseover',function(e,d){d3.select(this).style('opacity',1).style('stroke','#fff').style('stroke-width','.5px');tip.text(d.data.name+'  '+fmt(d.value));})
-    .on('mouseout',function(e,d){d3.select(this).style('opacity',1-d.depth*.14).style('stroke','none');tip.text('');});
-  g.append('text').attr('text-anchor','middle').attr('dy','.35em')
-    .style('font-family','Syne,sans-serif').style('font-weight','800').style('font-size','13px').style('fill','#dde0f0')
-    .text(fmt(root.value));
+  const wrap=$('sunburst');
+  wrap.replaceChildren();
+  if(!tree)return;
+  const ns='http://www.w3.org/2000/svg', size=Math.min(wrap.clientWidth||360,380);
+  const center=size/2, svg=document.createElementNS(ns,'svg');
+  svg.setAttribute('viewBox',`0 0 ${size} ${size}`);
+  svg.setAttribute('role','img');
+  svg.setAttribute('aria-label','Folder storage sunburst');
+  const colors=['#f5a623','#3d8ef0','#00e87a','#9d7cf5','#ff7440','#00c9c9','#ec4899','#14b8a6'];
+  const nodeValue=n=>Math.max(0,Number(n.value)||0);
+  const sectors=[];
+  function visit(node,start,end,depth){
+    if(depth>0)sectors.push({node,start,end,depth});
+    const children=(node.children||[]).filter(child=>nodeValue(child)>0);
+    if(depth>=4||!children.length)return;
+    const sum=children.reduce((total,child)=>total+nodeValue(child),0);
+    if(!sum)return;
+    let angle=start;
+    children.forEach((child,index)=>{
+      const next=index===children.length-1?end:angle+(end-start)*(nodeValue(child)/sum);
+      visit(child,angle,next,depth+1);angle=next;
+    });
+  }
+  const roots=(tree.children||[]).filter(child=>nodeValue(child)>0);
+  const rootSum=roots.reduce((total,child)=>total+nodeValue(child),0);
+  let angle=0;
+  roots.forEach((node,index)=>{
+    const next=index===roots.length-1?Math.PI*2:angle+Math.PI*2*nodeValue(node)/Math.max(rootSum,1);
+    visit(node,angle,next,1);angle=next;
+  });
+  function point(radius,a){return [center+Math.sin(a)*radius,center-Math.cos(a)*radius];}
+  function arcPath(inner,outer,start,end){
+    if(end-start>Math.PI*2-.0001){start+=.00005;end-=.00005;}
+    const a=point(outer,start),b=point(outer,end),c=point(inner,end),d=point(inner,start);
+    const large=end-start>Math.PI?1:0;
+    return `M${a[0]},${a[1]} A${outer},${outer} 0 ${large} 1 ${b[0]},${b[1]} L${c[0]},${c[1]} A${inner},${inner} 0 ${large} 0 ${d[0]},${d[1]} Z`;
+  }
+  sectors.forEach((sector,index)=>{
+    const inner=25+(sector.depth-1)*30, outer=Math.min(inner+27,center-8);
+    if(outer<=inner)return;
+    const path=document.createElementNS(ns,'path');
+    path.setAttribute('d',arcPath(inner,outer,sector.start,sector.end));
+    path.setAttribute('fill',colors[(index+sector.depth*2)%colors.length]);
+    path.setAttribute('stroke','#0d0f15');path.setAttribute('stroke-width','1');
+    path.style.cursor='default';
+    const title=document.createElementNS(ns,'title');
+    title.textContent=`${sector.node.name}: ${fmt(nodeValue(sector.node))}`;
+    path.appendChild(title);svg.appendChild(path);
+    path.addEventListener('pointerenter',()=>tip.textContent=`${sector.node.name} · ${fmt(nodeValue(sector.node))}`);
+    path.addEventListener('pointerleave',()=>tip.textContent='');
+  });
+  const centerText=document.createElementNS(ns,'text');
+  centerText.setAttribute('x',String(center));centerText.setAttribute('y',String(center));
+  centerText.setAttribute('text-anchor','middle');centerText.setAttribute('dominant-baseline','middle');
+  centerText.setAttribute('fill','#dde0f0');centerText.setAttribute('font-size','12');
+  centerText.setAttribute('font-weight','700');centerText.textContent=fmt(nodeValue(tree));
+  svg.appendChild(centerText);
+  const tip=document.createElementNS(ns,'text');
+  tip.setAttribute('x',String(center));tip.setAttribute('y',String(size-3));
+  tip.setAttribute('text-anchor','middle');tip.setAttribute('fill','#9aa2b8');tip.setAttribute('font-size','10');
+  svg.appendChild(tip);wrap.appendChild(svg);
 }
 
 function renderExtChart(exts) {
-  const top=exts.slice(0,12);
-  const ctx=$('ext-chart').getContext('2d');
-  if (_extChart) _extChart.destroy();
-  const COLS=['#f5a623','#3d8ef0','#00e87a','#9d7cf5','#ff3d5a','#f59e0b','#00c9c9','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1'];
-  _extChart=new Chart(ctx,{type:'bar',
-    data:{labels:top.map(e=>e.extension||'none'),
-      datasets:[{data:top.map(e=>e.total_bytes),borderRadius:4,borderSkipped:false,backgroundColor:COLS.map(c=>c+'cc')}]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt(c.raw)},
-        backgroundColor:'#131520',borderColor:'#1a1d2e',borderWidth:1,
-        titleColor:'#dde0f0',bodyColor:'#616880',
-        titleFont:{family:'JetBrains Mono'},bodyFont:{family:'JetBrains Mono'}}},
-      scales:{x:{ticks:{color:'#616880',font:{family:'JetBrains Mono',size:10}},grid:{color:'#1a1d2e'}},
-              y:{ticks:{color:'#616880',font:{family:'JetBrains Mono',size:10},callback:v=>fmt(v)},grid:{color:'#1a1d2e'}}}}});
+  const canvas=$('ext-chart'),rect=canvas.getBoundingClientRect(),height=210;
+  const width=Math.max(240,rect.width||360),ratio=window.devicePixelRatio||1;
+  canvas.width=width*ratio;canvas.height=height*ratio;
+  canvas.style.width='100%';canvas.style.height=height+'px';
+  const ctx=canvas.getContext('2d');ctx.setTransform(ratio,0,0,ratio,0,0);
+  ctx.clearRect(0,0,width,height);
+  const rows=(exts||[]).slice(0,12),colors=['#f5a623','#3d8ef0','#00e87a','#9d7cf5','#ff3d5a','#00c9c9','#14b8a6','#f97316'];
+  if(!rows.length){ctx.fillStyle='#616880';ctx.font='12px ui-monospace,monospace';ctx.fillText('No extension data',16,28);return;}
+  const left=58,right=8,top=8,bottom=36,plotW=width-left-right,plotH=height-top-bottom;
+  const max=Math.max(1,...rows.map(row=>Number(row.total_bytes)||0));
+  ctx.font='9px ui-monospace,monospace';ctx.textBaseline='middle';
+  for(let tick=0;tick<=4;tick++){
+    const y=top+plotH-tick*plotH/4,value=max*tick/4;
+    ctx.strokeStyle='#1a1d2e';ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(width-right,y);ctx.stroke();
+    ctx.fillStyle='#616880';ctx.textAlign='right';ctx.fillText(fmt(value),left-6,y);
+  }
+  const slot=plotW/rows.length,barW=Math.max(4,slot*.62);
+  rows.forEach((row,index)=>{
+    const value=Math.max(0,Number(row.total_bytes)||0),barH=value/max*plotH,x=left+index*slot+(slot-barW)/2,y=top+plotH-barH;
+    ctx.fillStyle=colors[index%colors.length];ctx.fillRect(x,y,barW,barH);
+    ctx.fillStyle='#9aa2b8';ctx.textAlign='center';ctx.textBaseline='top';
+    ctx.fillText(String(row.extension||'none').slice(0,8),x+barW/2,top+plotH+7);
+  });
 }
 
 // ── Duplicates ───────────────────────────────────────────────────────────────

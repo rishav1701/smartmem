@@ -19,7 +19,6 @@ import json
 import logging
 import os
 import pathlib
-import pickle
 import re
 import uuid
 
@@ -387,15 +386,9 @@ def _load_index(dim: int) -> bool:
                 return True
             raise ValueError("FAISS generation manifest does not match its files")
         if FAISS_INDEX_PATH.exists() and FAISS_MAP_PATH.exists():
-            loaded = faiss.read_index(str(FAISS_INDEX_PATH))
-            with open(FAISS_MAP_PATH, "rb") as f:
-                loaded_map = pickle.load(f)
-            if loaded.ntotal == len(loaded_map) and loaded.d == dim:
-                _index  = loaded
-                _id_map = loaded_map
-                logger.info("FAISS loaded: %d vectors dim=%d", _index.ntotal, dim)
-                return True
-            logger.warning("FAISS mismatch — creating fresh index")
+            # Legacy maps used pickle, which can execute code when loaded.
+            # Preserve those files for manual recovery, but rebuild safely in JSON.
+            logger.warning("Ignoring legacy pickle FAISS map; a safe JSON generation will be built")
         _index  = faiss.IndexFlatIP(dim)
         _id_map = []
         logger.info("Fresh FAISS index dim=%d", dim)

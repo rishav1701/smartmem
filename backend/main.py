@@ -3,17 +3,20 @@ SMARTMEM - Personal AI Memory Assistant
 Main FastAPI Application
 """
 
+import asyncio
 import logging
 import pathlib
+import ipaddress
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from database.db import init_db
 from workers.task_queue import start_worker, recover_interrupted_tasks
-from config import LOG_LEVEL, ALLOW_ALL_ORIGINS, ALLOWED_ORIGINS, DATA_DIR, APP_VERSION
+from config import LOG_LEVEL, ALLOWED_ORIGINS, DATA_DIR, APP_VERSION
 from routers import (
     directories, scan, storage, duplicates,
     large_files, organizer, search, tasks, file_actions, settings
@@ -31,6 +34,16 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Memora starting up ...")
+    from services.ollama_runtime import ensure_ollama_started
+    async def start_ollama_in_background():
+        try:
+            state = await ensure_ollama_started()
+            logger.info("Ollama startup check: %s", state)
+        except Exception:
+            logger.exception("Ollama startup check failed; non-AI features remain available")
+    app.state.ollama_start_task = asyncio.create_task(
+        start_ollama_in_background(), name="ollama-autostart"
+    )
     await init_db()
     recovered = await recover_interrupted_tasks()
     if recovered:
@@ -54,15 +67,37 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Fixed CORS configuration using config values
-cors_origins = ["*"] if ALLOW_ALL_ORIGINS else ALLOWED_ORIGINS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
+
+
+@app.middleware("http")
+async def local_only_and_security_headers(request: Request, call_next):
+    """Keep the local file API inaccessible to LAN clients and DNS-rebinding hosts."""
+    client_host = request.client.host if request.client else ""
+    try:
+        is_loopback = ipaddress.ip_address(client_host).is_loopback
+    except ValueError:
+        is_loopback = False
+    host = (request.url.hostname or "").lower().rstrip(".")
+    if not is_loopback or host not in {"localhost", "127.0.0.1", "::1"}:
+        return PlainTextResponse("Local access only", status_code=403)
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+    )
+    return response
 
 app.include_router(directories.router, prefix="/api", tags=["Directories"])
 app.include_router(scan.router,        prefix="/api", tags=["Scanning"])

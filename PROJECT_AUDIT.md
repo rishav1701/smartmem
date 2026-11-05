@@ -5,7 +5,7 @@
 
 ## Executive summary
 
-SmartMem is a runnable-shaped local FastAPI application with an extensive single-page vanilla frontend, SQLite metadata, FAISS document search, Ollama integration, directory scanning, hashing, categorization, and storage summaries. It is a useful portfolio prototype, but the implementation and its README currently overstate production readiness. There is no test suite, frontend build/test pipeline, migration framework, CI workflow, release documentation, or desktop packaging. Several operations and indexes are not crash-safe or fully incremental.
+SmartMem is a local FastAPI application with a single-page vanilla frontend, SQLite metadata, FAISS document search, Ollama integration, directory scanning, hashing, categorization, and storage summaries. Focused backend tests and CI now exist, but have not been run in this environment. Frontend browser coverage, broader workflow tests, release packaging, and crash recovery remain incomplete.
 
 ## Repository map
 
@@ -35,7 +35,7 @@ SmartMem is a runnable-shaped local FastAPI application with an extensive single
 
 1. **Automated quality gates are only a start.** Focused path/task, scanner, migration, search, and duplicate tests plus a pytest GitHub Actions workflow now exist. API, extraction, organizer, and end-to-end coverage is still missing, as are lint/format configuration, frontend type checking, and a dependency lock. The tests could not be executed in this environment.
 2. **Task recovery is partial.** The task queue remains in-process, so restart cannot resume interrupted work. This pass marks queued/running rows failed with a retry explanation and adds a retry endpoint for supported task types. Work is not silently lost, but automatic resumption and idempotency guarantees are not provided. Handler terminal states are no longer overwritten by the worker.
-3. **Vector consistency is improved but not transactional across SQLite and FAISS.** New generations use immutable index/map files selected by an atomic JSON manifest, and DB vector IDs update after the manifest. A crash between the two systems can cause repeat indexing, but existing generations stay available. Legacy pickle maps remain readable for backward compatibility and must be treated as trusted local data.
+3. **Vector consistency is improved but not transactional across SQLite and FAISS.** New generations use immutable index/map files selected by an atomic JSON manifest, and DB vector IDs update after the manifest. A crash between the two systems can cause repeat indexing, but existing generations stay available. Legacy pickle maps are preserved but never deserialized; they require a safe rebuild.
 4. **Search now embeds overlapping passages and has a local lexical fallback.** Excerpts and computed match reasons are returned. Page/section provenance and grounded conversational answers remain unimplemented. Extraction is bounded by a configurable character limit.
 5. **Organizer boundaries are stronger but operation recovery is incomplete.** Live mode remains an explicit user choice. Source/destination paths are rechecked against selected roots and category names are allowlisted. A process crash between file movement and DB history update can still require manual recovery; the marker is not automatically reconciled.
 
@@ -47,7 +47,8 @@ SmartMem is a runnable-shaped local FastAPI application with an extensive single
 - Hash jobs use a process-global semaphore. The hasher now avoids symlink files and verifies the opened file identity, but does not re-stat after reading to detect concurrent content changes.
 - Extraction catches errors and returns empty text, so unsupported, corrupted, and scanned-image files are indistinguishable in UI/state. DOC/PPT/XLS legacy formats, OCR, and transcription are not implemented.
 - Settings are environment-only; the Settings view reports effective paths/models/resource bounds, but does not yet edit them. Backup/restore and theme controls are absent.
-- CORS now limits methods/headers and disables credentials by default. An opt-in wildcard origin setting remains. There is no authentication; deployment should remain loopback-only.
+- CORS now limits methods/headers, disables credentials, and has no wildcard mode. Middleware rejects non-loopback peers and unexpected Host headers and adds browser security headers. This is defense in depth, not authentication; keep deployment loopback-only.
+- Live organizer moves now reserve unique destinations atomically, protect existing files during undo, and report move failures as task failures.
 - Error/log paths may include local filenames/paths. The logging policy needs a deliberate privacy review.
 - Primary search, task, duplicate, large-file, organizer-log, and categorised-file inputs are bounded; remaining APIs still need a systematic schema review.
 - Several README statements are aspirational or stale (incremental search/indexing and future features are mixed with implemented behavior); screenshots and release instructions are absent.
@@ -65,19 +66,19 @@ SmartMem is a runnable-shaped local FastAPI application with an extensive single
 
 - Enumerated source/config/docs while excluding the local virtual environment from the source inventory.
 - Read route handlers, DB schema, scanner, extractor/search, task queue, security guard, organizer, storage routes, and frontend API/navigation code.
-- Added isolated regression tests for linked path rejection, recycle-bin deletion, task recovery, migration, scan reconciliation, search fallback/chunking, and duplicate totals; configured CI to run pytest. These tests were not executed locally because no working Python interpreter is installed.
+- Added isolated regression tests for linked path rejection, recycle-bin deletion, task recovery, migration, scan reconciliation, search fallback/chunking, duplicate totals, safe legacy index handling, organizer destination collisions, and local security middleware. CI runs pytest and pip-audit.
 - Parsed the frontend's inline JavaScript with Node's `--check` and ran `git diff --check` successfully.
 - Confirmed an ignored SQLite DB with WAL sidecars exists and left it untouched.
 - Attempted to use both system Python and the project-local `.venv`; the venv's base interpreter path points to a missing Windows Store Python installation, so backend tests and startup could not run here.
 
 ## Recommended sequence
 
-1. Restore a working Python 3.11 environment and run the new tests/CI locally; add API, organizer, and full workflow tests.
+1. Restore a working Python 3.11 environment and run the new tests/CI locally; extend organizer API and full workflow coverage.
 2. Add automatic crash reconciliation for organizer moves and exercise incomplete-scan behavior on supported platforms.
 3. Extend migrations and add explicit database backup/restore.
 4. Add page/section provenance and grounded multi-turn question answering after evaluating citation correctness.
 5. Make extraction limits/status explicit and add optional format adapters (OCR/transcription only behind local dependencies and settings).
-6. Split the frontend into a typed component app and bundle/remove external CDN assets.
+6. Split the frontend into a typed component app, remove inline handlers, and add browser-level coverage. UI rendering no longer depends on external CDN assets.
 7. Add frontend/browser tests and release screenshots after real end-to-end workflows are verified.
 
 This audit is a code review, not a claim that every flow has passed runtime testing.

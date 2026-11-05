@@ -1,5 +1,7 @@
 import aiosqlite
 import pytest
+import sys
+from types import SimpleNamespace
 
 from services.search import semantic_search as search
 
@@ -63,3 +65,27 @@ async def test_detect_dim_probes_and_caches_dimension(monkeypatch):
     monkeypatch.setattr(search, "_raw_embed", fake_embed)
     assert await search._detect_dim("test-model") == 3
     assert await search._detect_dim("test-model") == 3
+
+
+def test_legacy_pickle_map_is_not_deserialized(tmp_path, monkeypatch):
+    legacy_index = tmp_path / "legacy.index"
+    legacy_map = tmp_path / "legacy.pkl"
+    manifest = tmp_path / "manifest.json"
+    legacy_index.write_bytes(b"legacy index")
+    legacy_bytes = b"pickle data must be treated as opaque bytes"
+    legacy_map.write_bytes(legacy_bytes)
+    previous_index, previous_map = search._index, search._id_map
+    fake_faiss = SimpleNamespace(
+        IndexFlatIP=lambda dimension: SimpleNamespace(ntotal=0, d=dimension)
+    )
+    monkeypatch.setitem(sys.modules, "faiss", fake_faiss)
+    monkeypatch.setattr(search, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(search, "FAISS_INDEX_PATH", legacy_index)
+    monkeypatch.setattr(search, "FAISS_MAP_PATH", legacy_map)
+    monkeypatch.setattr(search, "FAISS_MANIFEST_PATH", manifest)
+
+    try:
+        assert search._load_index(3) is False
+        assert legacy_map.read_bytes() == legacy_bytes
+    finally:
+        search._index, search._id_map = previous_index, previous_map

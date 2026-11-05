@@ -22,5 +22,5 @@ async def settings(db: aiosqlite.Connection = Depends(get_db)):
         "chunk_size": CHUNK_SIZE,
         "chunk_overlap": CHUNK_OVERLAP,
         "directories": directories,
-        "external_static_assets": ["fonts.googleapis.com", "cdn.jsdelivr.net", "cdnjs.cloudflare.com"],
+        "external_static_assets": [],
     }
